@@ -120,9 +120,10 @@
       <section class="card" id="shelf-card">
         <div class="card-heading"><span class="step-token">1</span><div><h2>Show me your shelf</h2><p class="intro">Give your buddy a snapshot of your collection.</p></div></div>
         <div class="drop">
-          <label for="photo">Shelf photo</label>
+          <label for="photo">Shelf photo <small>(optional)</small></label>
           <input id="photo" name="photo" type="file" accept="image/*" capture="environment">
           <img id="photo-preview" class="photo-preview" alt="Preview of uploaded shelf photo">
+          <small>Skip the photo if you want recommendations based only on your favorites and player count.</small>
           <label for="shelf-notes">What do the shelf areas mean?</label>
           <textarea id="shelf-notes" name="shelf_notes" placeholder="Example: top shelf = our favorites; second row = unplayed games"></textarea>
           <label for="expansions">Expansions included?</label>
@@ -317,10 +318,11 @@ async function requestJson(url, options) {
 function demoAnalyzeResponse(formData) {
   const favorites = formData instanceof FormData ? (formData.get('favorites') || '').toString().trim() : '';
   const purchaseGame = formData instanceof FormData ? (formData.get('purchase_game') || '').toString().trim() : '';
+  const hasPhoto = formData instanceof FormData && formData.get('photo')?.name;
   const favoriteText = favorites || 'the example favorites';
   const purchaseTitle = purchaseGame || 'Sample purchase option';
   return {
-    answer: `This browser-only preview received these favorites: ${favoriteText}. It prepared example recommendations for demonstration. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.`,
+    answer: `${hasPhoto ? 'This browser-only preview received a shelf photo and ' : 'No shelf photo was provided; this browser-only preview '}received these favorites: ${favoriteText}. It prepared example recommendations for demonstration. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.`,
     shelf_report: {
       games: [
         {title:"Wyrmspan", shelf_group:"favorite"},
