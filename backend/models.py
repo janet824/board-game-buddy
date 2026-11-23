@@ -14,6 +14,7 @@ class UserContext(BaseModel):
     variants_or_house_rules: str = ""
     purchase_preference: str = "either"
     purchase_query: str = ""
+    purchase_search_requested: bool = False
     zip_code: str = ""
     local_store_search_consent: bool = False
 

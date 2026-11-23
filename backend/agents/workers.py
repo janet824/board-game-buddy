@@ -144,8 +144,9 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> WorkerRep
             f"ZIP code supplied: {'yes' if context.zip_code else 'no'}. "
             "Do not recommend any game already in the owned collection. Suggest up to five "
             "games the user may not own. For each one, "
-            "briefly identify the collaborative-filtering signal or explain that it is a "
-            "cold-start candidate."
+            "briefly identify the collaborative-filtering signal or explain in plain "
+            "English that this is an early recommendation based on limited profile data. "
+            "Do not append labels such as 'candidate' to game titles."
         ),
         schema_name="recommendation_report",
         schema=REPORT_SCHEMA,
@@ -192,10 +193,11 @@ async def run_workers(shelf: ShelfReport, context: UserContext) -> list[WorkerRe
     recommendation_report = next(
         report for report in reports if report.worker == "Game Recommender"
     )
-    purchase_report = await advise_purchases(
-        titles=[item["title"] for item in recommendation_report.recommendations],
-        owned_titles=[game.title for game in shelf.games],
-        context=context,
-    )
-    reports.append(purchase_report)
+    if context.purchase_search_requested:
+        purchase_report = await advise_purchases(
+            titles=[item["title"] for item in recommendation_report.recommendations],
+            owned_titles=[game.title for game in shelf.games],
+            context=context,
+        )
+        reports.append(purchase_report)
     return reports

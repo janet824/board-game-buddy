@@ -6,10 +6,13 @@ from backend.models import BuddyRequest, BuddyResponse, ShelfReport, WorkerRepor
 
 def compose_answer(shelf: ShelfReport, reports: list[WorkerReport], has_photo: bool) -> str:
     visible = [game.title for game in shelf.games]
+    recommendation_report = next(
+        (report for report in reports if report.worker == "Game Recommender"),
+        None,
+    )
     recommendations = [
-        item["title"]
-        for report in reports
-        for item in report.recommendations
+        item["title"].removesuffix(" — candidate").removesuffix(" - candidate")
+        for item in (recommendation_report.recommendations if recommendation_report else [])
         if item.get("title")
     ]
     detected = ", ".join(visible[:12]) if visible else (
@@ -17,11 +20,16 @@ def compose_answer(shelf: ShelfReport, reports: list[WorkerReport], has_photo: b
         else "No shelf photo was provided"
     )
     suggestions = ", ".join(dict.fromkeys(recommendations)) or "No recommendations were returned"
+    review_note = (
+        "Review the detected titles before treating the collection as final."
+        if has_photo
+        else "You can add a shelf photo later if you want the collection interpreted automatically."
+    )
     return (
         f"{'I found ' + str(len(visible)) + ' possible game(s) in the photo: ' if has_photo else 'I used your typed preferences without a shelf photo: '}"
         f"{detected}. "
         f"Based on your favorites and player count, start by exploring: {suggestions}. "
-        "Review the detected titles before treating the collection as final."
+        f"{review_note}"
     )
 
 

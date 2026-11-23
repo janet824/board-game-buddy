@@ -61,7 +61,9 @@ async def answer_rules_question(
     result = await ask_json(
         system=(
             "You are the Rules Helper for Board Game Buddy. Answer a live board-game "
-            "rules question using the uploaded rulebook or card photo as evidence. "
+            "rules question using the uploaded rulebook or card photo as evidence when "
+            "one is provided. If there is no photo, answer cautiously and clearly say "
+            "that the rulebook needs to be checked. "
             "Distinguish official printed text from your interpretation. Treat expansion "
             "rules, variants, and house rules as separate layers. Never invent unreadable "
             "text or pretend a community interpretation is official. If the image is "
@@ -73,7 +75,8 @@ async def answer_rules_question(
             f"Variants or house rules: {variants.strip() or 'none stated'}\n"
             "Give a direct ruling first, then a short numbered explanation. In "
             "official_basis, describe only what is visible or safely supported by the "
-            "uploaded source; do not fabricate page numbers or quotations. For every "
+            "uploaded source, or say that no source was provided; do not fabricate page "
+            "numbers or quotations. For every "
             "rulebook source, include the exact edition/version and page only when known. "
             "For publisher sites and forums, identify the source type. Never invent a URL. "
             "Use an empty URL and url_status='not provided' when no verified link is available."

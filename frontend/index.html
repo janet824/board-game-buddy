@@ -162,6 +162,8 @@
           <input id="local-store-search" name="local_store_search" type="checkbox" value="true" style="width:auto; min-height:auto;">
           Search nearby game-store websites if I provide my ZIP code
         </label>
+        <input id="purchase-search" name="purchase_search" type="hidden" value="false">
+        <button id="purchase-submit" type="submit">Search trusted purchase options</button>
       </section>
     </div>
   </form>
@@ -169,8 +171,9 @@
     <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
     <div class="card-heading"><span class="step-token">3</span><div><h2>Ask a live rules question</h2><p class="intro">Photograph the relevant rulebook page, reference card, or player aid while you play.</p></div></div>
     <form id="rules-form">
-      <label for="rulebook-photo">Rulebook or card photo</label>
-      <input id="rulebook-photo" name="rulebook_photo" type="file" accept="image/*" capture="environment" required>
+      <label for="rulebook-photo">Rulebook or card photo <small>(optional)</small></label>
+      <input id="rulebook-photo" name="rulebook_photo" type="file" accept="image/*" capture="environment">
+      <small>Upload a page for source-based help, or skip it for a cautious answer based on your question.</small>
       <label for="question">What is confusing?</label>
       <textarea id="question" name="question" placeholder="Example: I am Electra playing Iron Maiden as a guest performer. Can I break normal placement rules?" required></textarea>
       <label for="rules-expansions">Expansions in use</label>
@@ -187,6 +190,8 @@
 const form = document.querySelector('#buddy-form');
 const result = document.querySelector('#result');
 const button = document.querySelector('#submit');
+const purchaseSubmit = document.querySelector('#purchase-submit');
+const purchaseSearch = document.querySelector('#purchase-search');
 const rulesForm = document.querySelector('#rules-form');
 const rulesResult = document.querySelector('#rules-result');
 const rulesButton = document.querySelector('#rules-submit');
@@ -212,6 +217,7 @@ document.querySelector('#buy-button').addEventListener('click', () => {
   purchaseField.closest('.card').scrollIntoView({behavior:'smooth', block:'center'});
   purchaseField.focus();
 });
+purchaseSubmit.addEventListener('click', () => { purchaseSearch.value = 'true'; });
 const demoMode = location.hostname.endsWith('.github.io') || new URLSearchParams(location.search).has('demo');
 if (demoMode) document.querySelector('#demo-notice').hidden = false;
 let soundsEnabled = false;
@@ -233,6 +239,7 @@ soundToggle.addEventListener('click', () => {
 });
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (event.submitter !== purchaseSubmit) purchaseSearch.value = 'false';
   button.disabled = true; button.textContent = 'The agents are thinking…'; result.hidden = false;
   document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
   document.querySelector('[data-agent="shelf"]')?.classList.add('thinking');

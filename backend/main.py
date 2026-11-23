@@ -39,6 +39,7 @@ async def analyze(
     variants: str = Form(default=""),
     purchase_preference: str = Form(default="either"),
     purchase_game: str = Form(default=""),
+    purchase_search: bool = Form(default=False),
     zip_code: str = Form(default=""),
     local_store_search: bool = Form(default=False),
 ) -> dict:
@@ -63,6 +64,7 @@ async def analyze(
                 variants_or_house_rules=variants.strip(),
                 purchase_preference=purchase_preference,
                 purchase_query=purchase_game.strip(),
+                purchase_search_requested=purchase_search,
                 zip_code=zip_code.strip(),
                 local_store_search_consent=local_store_search,
             ),
@@ -80,13 +82,13 @@ async def rules(
 ) -> dict:
     if not question.strip():
         raise HTTPException(status_code=400, detail="Enter a rules question.")
-    if not rulebook_photo or not rulebook_photo.filename:
-        raise HTTPException(status_code=400, detail="Upload a rulebook or card photo.")
-    raw = await rulebook_photo.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="The uploaded photo is empty.")
-    content_type = rulebook_photo.content_type or "image/jpeg"
-    image_data_url = f"data:{content_type};base64,{base64.b64encode(raw).decode('ascii')}"
+    image_data_url = ""
+    if rulebook_photo and rulebook_photo.filename:
+        raw = await rulebook_photo.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="The uploaded photo is empty.")
+        content_type = rulebook_photo.content_type or "image/jpeg"
+        image_data_url = f"data:{content_type};base64,{base64.b64encode(raw).decode('ascii')}"
     result = await answer_rules_question(
         question=question,
         image_data_url=image_data_url,
