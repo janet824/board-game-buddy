@@ -29,6 +29,10 @@ uvicorn backend.main:app --reload --port 8000
 
 Open http://127.0.0.1:8000/ in a browser.
 
+## Deploy for phone testing
+
+This repository includes `render.yaml` for deployment on Render. Create a new Web Service from this GitHub repository, keep the generated start command, and enter `PORTKEY_API_KEY` only in Render's private environment-variable field. Do not commit the key to GitHub. Render will provide the shareable HTTPS app URL after the first deploy.
+
 ### Safety before sharing
 
 - Never commit `.env` or paste the Portkey key into source code, screenshots, prompts, or the README. The real key is loaded only from the local `.env` file, which is ignored by Git.
