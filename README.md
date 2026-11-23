@@ -4,7 +4,7 @@ Board Game Buddy is a multi-agent assistant for discovering, understanding, and 
 
 ## Quick start
 
-### 1. Configure Portkey
+### 1. Configure OpenAI
 
 From this directory:
 
@@ -12,11 +12,13 @@ From this directory:
 cp .env.example .env
 ```
 
-Put your Portkey key in `.env`:
+Put your OpenAI key in `.env`:
 
 ```text
-PORTKEY_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
 ```
+
+When grading from the course submission folder, the app also accepts the shared `.env` one folder above this repository. A project-local `.env` takes precedence when both files exist.
 
 ### 2. Install and run the backend
 
@@ -31,13 +33,13 @@ Open http://127.0.0.1:8000/ in a browser.
 
 ## Deploy for phone testing
 
-This repository includes `render.yaml` for deployment on Render. Create a new Web Service from this GitHub repository, keep the generated start command, and enter `PORTKEY_API_KEY` only in Render's private environment-variable field. Do not commit the key to GitHub. Render will provide the shareable HTTPS app URL after the first deploy.
+This repository includes `render.yaml` for deployment on Render. Create a new Web Service from this GitHub repository, keep the generated start command, and enter `OPENAI_API_KEY` only in Render's private environment-variable field. Do not commit the key to GitHub. Render will provide the shareable HTTPS app URL after the first deploy.
 
-The repository also publishes a browser-only demo through GitHub Pages at `https://janet824.github.io/board-game-buddy/`. The demo is labeled **Demo Mode** and uses sample results; it does not call Portkey or represent live AI output.
+The repository also publishes a browser-only demo through GitHub Pages at `https://janet824.github.io/board-game-buddy/`. The demo is labeled **Demo Mode** and uses sample results; it does not call an external AI service or represent live AI output.
 
 ### Safety before sharing
 
-- Never commit `.env` or paste the Portkey key into source code, screenshots, prompts, or the README. The real key is loaded only from the local `.env` file, which is ignored by Git.
+- Never commit `.env` or paste the OpenAI key into source code, screenshots, prompts, or the README. The real key is loaded only from the local `.env` file, which is ignored by Git.
 - `.env.example` contains configuration names only; its blank key is intentional.
 - Uploaded photos and questions are processed for the current request and are not saved by this app.
 - Do not put private names, addresses, ZIP codes, collection screenshots, or rulebook photos into the repository.

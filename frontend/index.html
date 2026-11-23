@@ -19,9 +19,21 @@
     .hero { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; }
     .hero-pieces { font-size:3.4rem; letter-spacing:.08em; transform:rotate(5deg); filter:drop-shadow(0 5px 0 #b99158); }
     .workflow { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:28px 0 4px; }
-    .workflow a { display:block; text-decoration:none; color:#fff; background:var(--felt); border:0; border-radius:14px; padding:13px 15px; font-weight:800; box-shadow:0 4px 0 #163a37; transition:transform .2s,box-shadow .2s,background .2s; }
-    .workflow a:hover,.workflow a:focus-visible { transform:translateY(-2px); box-shadow:0 6px 0 #163a37; background:#2c6861; }
-    .workflow a small { color:#dcebe2; }
+    .workflow a, .workflow button { display:block; text-decoration:none; color:#fff; background:var(--felt); border:0; border-radius:14px; padding:13px 15px; font-weight:800; box-shadow:0 4px 0 #163a37; transition:transform .2s,box-shadow .2s,background .2s; }
+    .workflow button { margin:0; min-height:0; text-align:left; cursor:pointer; }
+    .workflow a:hover,.workflow a:focus-visible,.workflow button:hover,.workflow button:focus-visible { transform:translateY(-2px); box-shadow:0 6px 0 #163a37; background:#2c6861; }
+    .workflow a small, .workflow button small { display:block; color:#dcebe2; font:inherit; font-size:.8rem; font-weight:500; }
+    .view { display:none; }
+    .layout.view { display:none; }
+    .view.active { display:block; }
+    .layout.view.active { display:grid; }
+    .layout .back-button { grid-column:1 / -1; justify-self:start; }
+    #collection-view.purchase-mode #shelf-card,
+    #collection-view.purchase-mode #recommendation-card { display:none; }
+    #collection-view:not(.purchase-mode) .purchase-panel,
+    #collection-view.purchase-mode #recommendation-card { display:none; }
+    .purchase-panel { grid-column:1 / -1; }
+    .back-button { width:auto; min-height:38px; margin:0 0 16px; padding:8px 12px; background:#6d5942; box-shadow:0 3px 0 #4f402f; }
     .workflow small { display:block; color:var(--muted); font-weight:500; }
     .layout { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:18px; }
     .card { background:#fffdf8; border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:0 10px 0 #c9a97655,0 16px 30px #57472c18; }
@@ -39,6 +51,8 @@
     .photo-preview { display:none; width:100%; max-height:180px; object-fit:cover; margin-top:12px; border-radius:12px; border:3px solid white; box-shadow:0 3px 10px #28452a33; }
     .photo-preview.visible { display:block; }
     .result { margin-top:22px; }
+    .result:focus { outline:3px solid #e5b95e; outline-offset:4px; }
+    .report-ready { display:inline-block; margin-bottom:8px; padding:6px 10px; border-radius:999px; background:#e8f1e5; color:#367245; font-size:.82rem; font-weight:900; }
     .pill { display:inline-block; background:#eef3e9; border-radius:999px; padding:5px 10px; margin:4px 4px 0 0; }
     .worker { border:1px solid var(--line); border-left:7px solid var(--coral); border-radius:14px; padding:14px 16px; margin-top:18px; background:#fffaf0; }
     .purchase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:12px; }
@@ -89,10 +103,10 @@
   </div>
   <p class="intro">Your AI buddy for understanding tricky rules, exploring your collection, and finding games you will actually want to play.</p>
   <p class="demo-notice" id="demo-notice" hidden>🧪 Demo Mode: sample results are shown in this GitHub Pages preview. AI requests are disabled.</p>
-  <nav class="workflow" aria-label="Jump to a Board Game Buddy task">
-    <a href="#shelf-card">📸 Explore my shelf <small>Find games that fit you</small></a>
-    <a href="#rules-card">📖 Solve a rules question <small>Get an evidence-backed ruling</small></a>
-    <a href="#result">🛒 Find where to buy <small>Compare trusted options</small></a>
+  <nav class="workflow" aria-label="Choose a Board Game Buddy task">
+    <button type="button" data-show-view="collection-view">📸 Explore my shelf <small>Find games that fit you</small></button>
+    <button type="button" data-show-view="rules-view">📖 Solve a rules question <small>Get an evidence-backed ruling</small></button>
+    <button type="button" id="buy-button">🛒 Find where to buy <small>Compare trusted options</small></button>
   </nav>
   <div class="agent-strip" aria-label="Board Game Buddy agents">
     <span class="agent" data-agent="shelf"><span class="agent-icon">⬡</span><span>Shelf Interpreter<small>reads your collection</small></span></span>
@@ -101,7 +115,8 @@
     <button class="sound-toggle" id="sound-toggle" type="button">🔊 Enable agent sounds</button>
   </div>
   <form id="buddy-form">
-    <div class="layout">
+    <div class="layout view" id="collection-view">
+      <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
       <section class="card" id="shelf-card">
         <div class="card-heading"><span class="step-token">1</span><div><h2>Show me your shelf</h2><p class="intro">Give your buddy a snapshot of your collection.</p></div></div>
         <div class="drop">
@@ -116,12 +131,16 @@
           <textarea id="variants" name="variants" placeholder="Example: We use a house rule that changes how scoring works"></textarea>
         </div>
       </section>
-      <section class="card">
+      <section class="card" id="recommendation-card">
         <div class="card-heading"><span class="step-token">2</span><div><h2>Tell me what you like</h2><p class="intro">The more you share, the more personal the recommendations.</p></div></div>
         <label for="favorites">Favorite games</label>
         <textarea id="favorites" name="favorites" placeholder="Example: Brass: Birmingham, The Gallerist, and games with deep strategy"></textarea>
         <label for="player-count">Typical number of players</label>
         <input id="player-count" name="player_count" type="number" min="1" max="20" value="2">
+        <button id="submit" type="submit">Meet my Board Game Buddy</button>
+      </section>
+      <section class="card purchase-panel">
+        <div class="card-heading"><span class="step-token">2</span><div><h2>Find where to buy</h2><p class="intro">Compare trusted online, local, and big-box options.</p></div></div>
         <label for="purchase-preference">If you decide to buy, what condition do you prefer?</label>
         <select id="purchase-preference" name="purchase_preference">
           <option value="either">New or used—the best value</option>
@@ -137,11 +156,11 @@
           <input id="local-store-search" name="local_store_search" type="checkbox" value="true" style="width:auto; min-height:auto;">
           Search nearby game-store websites if I provide my ZIP code
         </label>
-        <button id="submit" type="submit">Meet my Board Game Buddy</button>
       </section>
     </div>
   </form>
-  <section class="card" id="rules-card" style="margin-top:24px;">
+  <section class="card view" id="rules-view" style="margin-top:24px;">
+    <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
     <div class="card-heading"><span class="step-token">3</span><div><h2>Ask a live rules question</h2><p class="intro">Photograph the relevant rulebook page, reference card, or player aid while you play.</p></div></div>
     <form id="rules-form">
       <label for="rulebook-photo">Rulebook or card photo</label>
@@ -154,9 +173,9 @@
       <input id="rules-variants" name="variants" placeholder="Example: none">
       <button id="rules-submit" type="submit">Ask the Rules Helper</button>
     </form>
-    <div id="rules-result" class="result" hidden></div>
+    <div id="rules-result" class="result" tabindex="-1" aria-live="polite" hidden></div>
   </section>
-  <section id="result" class="card result" hidden></section>
+  <section id="result" class="card result" tabindex="-1" aria-live="polite" hidden></section>
 </main>
 <script>
 const form = document.querySelector('#buddy-form');
@@ -168,7 +187,26 @@ const rulesButton = document.querySelector('#rules-submit');
 const soundToggle = document.querySelector('#sound-toggle');
 const photoInput = document.querySelector('#photo');
 const photoPreview = document.querySelector('#photo-preview');
-const demoMode = location.hostname.endsWith('.github.io');
+function showView(viewId) {
+  result.hidden = true;
+  document.querySelectorAll('.view').forEach(view => {
+    view.classList.toggle('active', view.id === viewId);
+    if (view.id === 'collection-view') view.classList.remove('purchase-mode');
+  });
+  if (viewId !== 'home-view') document.querySelector(`#${viewId}`)?.scrollIntoView({behavior:'smooth', block:'start'});
+  else window.scrollTo({top:0, behavior:'smooth'});
+}
+document.querySelectorAll('[data-show-view]').forEach(control => {
+  control.addEventListener('click', () => showView(control.dataset.showView));
+});
+document.querySelector('#buy-button').addEventListener('click', () => {
+  showView('collection-view');
+  document.querySelector('#collection-view').classList.add('purchase-mode');
+  const purchaseField = document.querySelector('#purchase-game');
+  purchaseField.closest('.card').scrollIntoView({behavior:'smooth', block:'center'});
+  purchaseField.focus();
+});
+const demoMode = location.hostname.endsWith('.github.io') || new URLSearchParams(location.search).has('demo');
 if (demoMode) document.querySelector('#demo-notice').hidden = false;
 let soundsEnabled = false;
 let audioContext;
@@ -211,12 +249,14 @@ form.addEventListener('submit', async (event) => {
     const games = data.shelf_report.games || [];
     const reports = data.worker_reports || [];
     result.innerHTML = `
+      <div class="report-ready">✓ Your report is ready</div>
       <h2>Your Board Game Buddy report</h2>
       <p>${escapeHtml(data.answer)}</p>
       <h3>Detected games</h3>
       <div>${games.length ? games.map(g => `<span class="pill">${escapeHtml(g.title)} · ${escapeHtml(g.shelf_group)}</span>`).join('') : '<p>No games detected yet.</p>'}</div>
       ${reports.map(renderWorker).join('')}
       <p><small>Low-confidence titles should be reviewed before using this collection for decisions.</small></p>`;
+    revealResult(result);
   } catch (error) {
     document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
     result.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
@@ -233,6 +273,7 @@ rulesForm.addEventListener('submit', async (event) => {
   try {
     const data = await requestJson('/api/rules', { method:'POST', body:new FormData(rulesForm) });
     rulesResult.innerHTML = `
+      <div class="report-ready">✓ Your rules answer is ready</div>
       <h3>Ruling</h3>
       <p><strong>${escapeHtml(data.ruling)}</strong></p>
       <p>${escapeHtml(data.answer)}</p>
@@ -242,6 +283,7 @@ rulesForm.addEventListener('submit', async (event) => {
       <ul>${(data.official_basis || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}${(data.uncertainties || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
       <h3>Sources</h3>
       <ul>${(data.sources || []).map(source => `<li><strong>${escapeHtml(source.source_type)}</strong>: ${escapeHtml(source.title)} — ${escapeHtml(source.version)}${source.page ? `, page ${escapeHtml(source.page)}` : ''}${source.url ? ` — <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener">open source</a>` : ` — ${escapeHtml(source.url_status)}`}</li>`).join('')}</ul>`;
+    revealResult(rulesResult);
   } catch (error) {
     rulesResult.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
   } finally {
@@ -252,8 +294,13 @@ rulesForm.addEventListener('submit', async (event) => {
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 }
+function revealResult(element) {
+  element.hidden = false;
+  element.scrollIntoView({behavior:'smooth', block:'start'});
+  element.focus({preventScroll:true});
+}
 async function requestJson(url, options) {
-  if (demoMode) return url.includes('/rules') ? demoRulesResponse() : demoAnalyzeResponse();
+  if (demoMode) return url.includes('/rules') ? demoRulesResponse() : demoAnalyzeResponse(options?.body);
   const response = await fetch(url, options);
   const body = await response.text();
   let data;
@@ -267,9 +314,13 @@ async function requestJson(url, options) {
   if (!response.ok) throw new Error(data.detail || `The request failed (${response.status}).`);
   return data;
 }
-function demoAnalyzeResponse() {
+function demoAnalyzeResponse(formData) {
+  const favorites = formData instanceof FormData ? (formData.get('favorites') || '').toString().trim() : '';
+  const purchaseGame = formData instanceof FormData ? (formData.get('purchase_game') || '').toString().trim() : '';
+  const favoriteText = favorites || 'the example favorites';
+  const purchaseTitle = purchaseGame || 'Sample purchase option';
   return {
-    answer: "This browser-only preview found a sample collection and prepared example recommendations. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.",
+    answer: `This browser-only preview received these favorites: ${favoriteText}. It prepared example recommendations for demonstration. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.`,
     shelf_report: {
       games: [
         {title:"Wyrmspan", shelf_group:"favorite"},
@@ -286,7 +337,7 @@ function demoAnalyzeResponse() {
         {title:"Wyrmspan", publisher_range:"1–5", official_recommendation:"See the official rulebook", optimal_player_count:"2–3", reason:"Lower counts keep the turns focused.", setup_burden:"moderate", play_mode:"physical"}
       ]},
       {worker:"Purchase Advisor", summary:"Sample purchase comparison. Live prices and stock require the full deployment.", recommendations:[
-        {title:"Sample purchase option", reason:"Demo card only.", store_name:"Example retailer", price:"Not live", availability:"Demo data"}
+        {title:purchaseTitle, reason:"Demo card only; live purchase searching requires the full deployment.", store_name:"Example retailer", price:"Not live", availability:"Demo data"}
       ]}
     ],
     agents_used:["Board Game Buddy","Shelf Interpreter","Game Recommender","Player Count Advisor"]

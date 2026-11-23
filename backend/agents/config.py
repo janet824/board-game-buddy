@@ -7,21 +7,19 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 ROOT = Path(__file__).resolve().parents[2]
+# Prefer a project-local .env, then fall back to the course layout where the
+# shared .env lives one folder above the cloned repository.
 load_dotenv(ROOT / ".env")
+load_dotenv(ROOT.parent / ".env")
 
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-5.6-luna")
-PORTKEY_BASE_URL = os.getenv("PORTKEY_BASE_URL", "https://api.portkey.ai/v1").rstrip("/")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-6-luna")
 
 
 def client() -> AsyncOpenAI:
-    key = os.getenv("PORTKEY_API_KEY", "").strip()
+    key = os.getenv("OPENAI_API_KEY", "").strip()
     if not key:
-        raise RuntimeError("PORTKEY_API_KEY is missing. Copy .env.example to .env and add it.")
-    return AsyncOpenAI(
-        api_key=key,
-        base_url=PORTKEY_BASE_URL,
-        default_headers={"x-portkey-provider": "openai"},
-    )
+        raise RuntimeError("OPENAI_API_KEY is missing. Copy .env.example to .env and add it.")
+    return AsyncOpenAI(api_key=key)
 
 
 def image_part(image_data_url: str) -> dict:

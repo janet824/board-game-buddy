@@ -5,9 +5,7 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: PORTKEY_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: PORTKEY_BASE_URL
-        value: https://api.portkey.ai/v1
       - key: MODEL_NAME
-        value: gpt-5.6-luna
+        value: gpt-6-luna
