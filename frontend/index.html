@@ -58,6 +58,7 @@
     .purchase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:12px; }
     .purchase-card { border:1px solid #d8e1d6; border-radius:14px; padding:14px; background:#f8fbf5; }
     .purchase-card.chosen { outline:3px solid var(--coral); }
+    .selection-status { margin:10px 0 0; padding:8px 10px; border-radius:9px; background:#e8f1e5; color:#367245; font-weight:800; }
     .purchase-card h4 { margin:0 0 8px; }
     .purchase-meta { color:var(--muted); font-size:.92rem; }
     .choose-purchase { width:auto; min-height:38px; margin-top:10px; padding:8px 12px; background:var(--ink); }
@@ -124,8 +125,9 @@
           <input id="photo" name="photo" type="file" accept="image/*" capture="environment">
           <img id="photo-preview" class="photo-preview" alt="Preview of uploaded shelf photo">
           <small>Skip the photo if you want recommendations based only on your favorites and player count.</small>
-          <label for="shelf-notes">What do the shelf areas mean?</label>
+          <label for="shelf-notes">What do the shelf areas mean? <small>(optional)</small></label>
           <textarea id="shelf-notes" name="shelf_notes" placeholder="Example: top shelf = our favorites; second row = unplayed games"></textarea>
+          <small>Leave this blank if your games are simply alphabetical or organized another way.</small>
           <label for="expansions">Expansions included?</label>
           <textarea id="expansions" name="expansions" placeholder="Example: Dark Alley, Dawn of Technology, none"></textarea>
           <label for="variants">Variants or house rules?</label>
@@ -262,7 +264,7 @@ form.addEventListener('submit', async (event) => {
       <h3>${games.length ? 'Games detected in the shelf photo' : 'Typed games used for analysis'}</h3>
       <div>${collectionMessage}</div>
       ${reports.map(renderWorker).join('')}
-      <p><small>Low-confidence titles should be reviewed before using this collection for decisions.</small></p>`;
+      <p><small>Some game names may be hard for us to read. Please check them before we use your shelf for recommendations.</small></p>`;
     revealResult(result);
   } catch (error) {
     document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
@@ -373,9 +375,23 @@ function renderWorker(report) {
   return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p><p class="purchase-meta"><strong>${escapeHtml(x.store_name || 'Store not verified')}</strong><br>${escapeHtml(x.price || 'Price not verified')} · ${escapeHtml(x.availability || 'Availability not verified')}</p>${x.primary_url ? `<a href="${escapeHtml(x.primary_url)}" target="_blank" rel="noopener">Primary option</a>` : ''}${x.secondary_url ? ` · <a href="${escapeHtml(x.secondary_url)}" target="_blank" rel="noopener">Value option</a>` : ''}${x.big_box_url ? `<hr><strong>Big-box option: ${escapeHtml(x.big_box_store || 'Retailer')}</strong><br>${escapeHtml(x.big_box_price || 'Price not verified')} · ${escapeHtml(x.big_box_availability || 'Availability not verified')}<br><a href="${escapeHtml(x.big_box_url)}" target="_blank" rel="noopener">Open big-box option</a>` : ''}<br><button type="button" class="choose-purchase" onclick="choosePurchase(this)">Choose this option</button><br><small>${escapeHtml(x.local_search_note || 'Call first if local stock is important.')}</small></article>`).join('')}</div></div>`;
 }
 function choosePurchase(button) {
-  document.querySelectorAll('.purchase-card').forEach(card => card.classList.remove('chosen'));
-  button.closest('.purchase-card').classList.add('chosen');
+  document.querySelectorAll('.purchase-card').forEach(card => {
+    card.classList.remove('chosen');
+    card.querySelector('.selection-status')?.remove();
+    const previousButton = card.querySelector('.choose-purchase');
+    previousButton?.setAttribute('aria-pressed', 'false');
+    if (previousButton) previousButton.textContent = 'Choose this option';
+  });
+  const card = button.closest('.purchase-card');
+  card.classList.add('chosen');
+  button.setAttribute('aria-pressed', 'true');
   button.textContent = '✓ Selected';
+  const status = document.createElement('p');
+  status.className = 'selection-status';
+  status.setAttribute('role', 'status');
+  status.textContent = 'Option selected. Open one of the links above to continue.';
+  card.appendChild(status);
+  card.scrollIntoView({behavior:'smooth', block:'center'});
 }
 function markAgent(name) { document.querySelector(`[data-agent="${name}"]`)?.classList.add('done'); }
 function pause(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
