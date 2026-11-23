@@ -48,8 +48,9 @@ REPORT_SCHEMA = {
                     "play_choice": {"type": "string", "enum": ["online", "physical"]},
                     "play_link": {"type": "string"},
                     "play_label": {"type": "string"},
+                    "setup_burden": {"type": "string"},
                 },
-                "required": ["title", "reason", "fit", "play_choice", "play_link", "play_label"],
+                "required": ["title", "reason", "fit", "play_choice", "play_link", "play_label", "setup_burden"],
                 "additionalProperties": False,
             },
         },
@@ -74,10 +75,14 @@ PLAYER_SCHEMA = {
                     "optimal_player_count": {"type": "string"},
                     "reason": {"type": "string"},
                     "setup_burden": {"type": "string"},
+                    "play_choice": {"type": "string", "enum": ["online", "physical"]},
+                    "play_link": {"type": "string"},
+                    "play_label": {"type": "string"},
                 },
                 "required": [
                     "title", "publisher_range", "official_recommendation",
                     "optimal_player_count", "reason", "setup_burden",
+                    "play_choice", "play_link", "play_label",
                 ],
                 "additionalProperties": False,
             },
@@ -161,19 +166,44 @@ DIGITAL_HOSTS = (
     "boardgamecore.net",
     "boiteajeux.net",
 )
+PLATFORM_LINKS = (
+    ("board game arena", "https://boardgamearena.com", "Board Game Arena"),
+    ("bga", "https://boardgamearena.com", "Board Game Arena"),
+    ("tabletopia", "https://tabletopia.com", "Tabletopia"),
+    ("steam", "https://store.steampowered.com", "Steam"),
+    ("yucata", "https://www.yucata.de", "Yucata"),
+    ("board game core", "https://boardgamecore.net", "Board Game Core"),
+    ("boite a jeux", "https://www.boiteajeux.net", "Boîte à Jeux"),
+    ("boîte à jeux", "https://www.boiteajeux.net", "Boîte à Jeux"),
+    ("app store", "https://apps.apple.com", "App Store"),
+    ("google play", "https://play.google.com", "Google Play"),
+)
+HEAVY_SETUP = re.compile(r"\b(heavy|long|tedious|fiddly|bookkeeping|bookkeep|overhead|complex|hour|hours)\b", re.I)
 
 
 def _keep_play_choice(item: dict) -> dict:
+    setup = item.get("setup_burden", "")
+    label = item.get("play_label", "").strip()
     link = item.get("play_link", "").strip()
-    if item.get("play_choice") == "online" and _digital_link(link):
+    platform_link, platform_name = _named_platform(f"{label} {link}")
+    usable_link = link if _digital_link(link) else platform_link
+    if HEAVY_SETUP.search(setup) and usable_link:
         item["play_choice"] = "online"
-        item["play_link"] = link
-        item["play_label"] = item.get("play_label", "").strip() or "Play online"
+        item["play_link"] = usable_link
+        item["play_label"] = label or platform_name or "Play online"
         return item
     item["play_choice"] = "physical"
     item["play_link"] = ""
     item["play_label"] = ""
     return item
+
+
+def _named_platform(text: str) -> tuple[str, str]:
+    lowered = text.lower()
+    for name, url, label in PLATFORM_LINKS:
+        if name in lowered:
+            return url, label
+    return "", ""
 
 
 def _digital_link(url: str) -> bool:
@@ -224,8 +254,7 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
             "Do not claim live prices or current availability. "
             "Explain the match in plain language. Never add the word candidate to a title. "
             "Favorites are the user's taste even when they already own those games. "
-            "For each game, choose online only when a real digital version is easier than "
-            "owning the physical game. Otherwise choose physical."
+            "Decide online versus physical from setup time, bookkeeping, and rules overhead."
         ),
         prompt=(
             f"Owned or photographed games: {titles or 'unknown'}. "
@@ -243,12 +272,12 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
             "must have been released within the past 12 months or be an active Kickstarter or "
             "Gamefound campaign, and none of them may repeat an overall recommendation. "
             "Explain each match in plain English. Do not append labels such as 'candidate' to titles. "
-            "For every game set play_choice to online or physical. Choose online only when "
-            "setup, bookkeeping, or rules overhead makes a digital version the better way "
-            "to play, and play_link is the direct https page for that game on Board Game "
-            "Arena, Steam, Tabletopia, Yucata, Board Game Core, Boîte à Jeux, the App Store, "
-            "or Google Play. play_label is the platform name. When physical is better, set "
-            "play_choice to physical and leave play_link and play_label empty. Never invent a platform or URL."
+            "For every game, describe setup time, bookkeeping, and rules overhead in setup_burden. "
+            "If that burden is heavy and a real digital version exists, set play_choice to online, "
+            "play_label to the platform, and play_link to its https page on Board Game Arena, "
+            "Steam, Tabletopia, Yucata, Board Game Core, Boîte à Jeux, the App Store, or Google Play. "
+            "If setup is short or no real digital version exists, set play_choice to physical and "
+            "leave play_link and play_label empty. Do not mark every game physical. Never invent a platform."
         ),
         schema_name="recommendation_pair",
         schema=PAIR_SCHEMA,
@@ -294,16 +323,22 @@ async def assess_player_count(
             "best counts. Check rulebooks and publisher materials for explicit recommended "
             "player counts in addition to the supported range. Consider BoardGameGeek "
             "discussions, reputable reviews, and "
-            "player reports as community evidence, never as official rules. Also assess "
-            "setup time, tedious bookkeeping, and rules overhead. Use plain English and "
-            "never mention a detected collection when the user typed the game."
+            "player reports as community evidence, never as official rules. Also judge "
+            "setup time, bookkeeping, and rules overhead. Use plain English and never "
+            "mention a detected collection when the user typed the game."
         ),
         prompt=(
             f"Games to assess: {titles or 'unknown'}. "
             f"The user usually plays with {context.typical_player_count} player(s). "
             f"{task} "
-            "For each, report publisher_range, official_recommendation, "
-            "optimal_player_count, and setup_burden. "
+            "For each, report publisher_range, official_recommendation, and "
+            "optimal_player_count. Describe setup time, bookkeeping, and rules overhead "
+            "in setup_burden. If that burden is heavy and a real digital version exists, "
+            "set play_choice to online, play_label to the platform, and play_link to its "
+            "https page on Board Game Arena, Steam, Tabletopia, Yucata, Board Game Core, "
+            "Boîte à Jeux, the App Store, or Google Play. If setup is short or no real "
+            "digital version exists, set play_choice to physical and leave play_link and "
+            "play_label empty. Never invent a platform. "
             "Include sources only when their URLs are trustworthy; never invent a page "
             "number or link."
         ),
@@ -318,6 +353,7 @@ async def assess_player_count(
             if "detected collection" not in sentence.lower() and "detected game" not in sentence.lower()
         ]
         result["summary"] = " ".join(kept).strip() or f"Here is how {purchase_game} fits different player counts."
+    result["recommendations"] = [_keep_play_choice(item) for item in result.get("recommendations", [])]
     return WorkerReport(worker="Player Count Advisor", metadata={"sources": sources}, **result)
 
 

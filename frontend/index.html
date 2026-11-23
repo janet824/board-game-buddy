@@ -28,12 +28,16 @@
     .view.active { display:block; }
     .layout.view.active { display:grid; }
     .layout .back-button { grid-column:1 / -1; justify-self:start; }
+    .page-actions { grid-column:1 / -1; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .page-actions .back-button, .page-actions .clear-button { width:auto; margin:0; }
     #collection-view.purchase-mode #shelf-card,
     #collection-view.purchase-mode #recommendation-card { display:none; }
     #collection-view:not(.purchase-mode) .purchase-panel,
     #collection-view.purchase-mode #recommendation-card { display:none; }
     .purchase-panel { grid-column:1 / -1; }
     .back-button { width:auto; min-height:38px; margin:0 0 16px; padding:8px 12px; background:#6d5942; box-shadow:0 3px 0 #4f402f; }
+    .clear-button { margin-top:12px; background:#9c3b32; box-shadow:0 4px 0 #6e241e; }
+    .clear-button:hover:not(:disabled), .clear-button:focus-visible { background:#b3473c; box-shadow:0 6px 0 #6e241e; }
     .workflow small { display:block; color:var(--muted); font-weight:500; }
     .layout { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:18px; }
     .card { background:#fffdf8; border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:0 10px 0 #c9a97655,0 16px 30px #57472c18; }
@@ -112,6 +116,7 @@
     <button type="button" data-show-view="rules-view">📖 Solve a rules question <small>Get an evidence-backed ruling</small></button>
     <button type="button" id="buy-button">🛒 Find where to buy <small>Compare online, local, and big-box prices</small></button>
   </nav>
+  <button type="button" id="clear-button" class="clear-button">Clear saved entries</button>
   <div class="agent-strip" aria-label="Board Game Buddy agents">
     <span class="agent" data-agent="shelf"><span class="agent-icon">⬡</span><span>Shelf Interpreter<small>reads your collection</small></span></span>
     <span class="agent" data-agent="recommend"><span class="agent-icon">🎲</span><span>Game Recommender<small>finds your next favorite</small></span></span>
@@ -120,7 +125,10 @@
   </div>
   <form id="buddy-form">
     <div class="layout view" id="collection-view">
-      <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
+      <div class="page-actions">
+        <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
+        <button type="button" class="clear-button" data-clear>Clear this page</button>
+      </div>
       <section class="card" id="shelf-card">
         <div class="card-heading"><div><h2>Show me your shelf</h2><p class="intro">Give your buddy a snapshot of your collection.</p></div></div>
         <div class="drop">
@@ -143,6 +151,7 @@
       </section>
       <section class="card purchase-panel">
         <div class="card-heading"><div><h2>Find where to buy</h2><p class="intro">Compare the cheapest online, local, and big-box prices.</p></div></div>
+        <button type="button" class="clear-button" data-clear>Clear this page</button>
         <label for="purchase-preference">If you decide to buy, what condition do you prefer?</label>
         <select id="purchase-preference" name="purchase_preference">
           <option value="either">New or used—the best value</option>
@@ -165,11 +174,15 @@
     </div>
   </form>
   <section class="card view" id="rules-view" style="margin-top:24px;">
-    <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
+    <div class="page-actions">
+      <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
+      <button type="button" class="clear-button" data-clear>Clear this page</button>
+    </div>
     <div class="card-heading"><div><h2>Ask a live rules question</h2><p class="intro">Name the game and ask the question. A photo is optional.</p></div></div>
     <form id="rules-form">
       <label for="rulebook-photo">Rulebook or card photo <small>(optional)</small></label>
       <input id="rulebook-photo" name="rulebook_photo" type="file" accept="image/*">
+      <img id="rules-preview" class="photo-preview" alt="Preview of uploaded rules photo">
       <small>A card or page photo is optional. The helper always checks the game's rulebook and other rules sources from the game name and question.</small>
       <label for="game-name">Game name</label>
       <input id="game-name" name="game_name" placeholder="Example: Trickerion" required>
@@ -197,12 +210,18 @@ const rulesButton = document.querySelector('#rules-submit');
 const soundToggle = document.querySelector('#sound-toggle');
 const photoInput = document.querySelector('#photo');
 const photoPreview = document.querySelector('#photo-preview');
+const rulesPhotoInput = document.querySelector('#rulebook-photo');
+const rulesPreview = document.querySelector('#rules-preview');
+const clearButton = document.querySelector('#clear-button');
+const savedResults = {shelf:'', purchase:''};
 function showView(viewId) {
-  result.hidden = true;
+  document.querySelector('#collection-view').classList.remove('purchase-mode');
   document.querySelectorAll('.view').forEach(view => {
     view.classList.toggle('active', view.id === viewId);
-    if (view.id === 'collection-view') view.classList.remove('purchase-mode');
   });
+  if (viewId === 'collection-view') restoreResult('shelf');
+  else result.hidden = true;
+  clearButton.textContent = viewId === 'home-view' ? 'Clear saved entries' : 'Clear this page';
   if (viewId !== 'home-view') document.querySelector(`#${viewId}`)?.scrollIntoView({behavior:'smooth', block:'start'});
   else window.scrollTo({top:0, behavior:'smooth'});
 }
@@ -210,6 +229,9 @@ document.querySelectorAll('[data-show-view]').forEach(control => {
   control.addEventListener('click', () => showView(control.dataset.showView));
 });
 document.querySelector('#buy-button').addEventListener('click', () => openBuyPage(''));
+document.querySelectorAll('#clear-button, [data-clear]').forEach(button => {
+  button.addEventListener('click', () => clearSaved(currentTask()));
+});
 document.querySelector('#recommended-choices').addEventListener('change', (event) => {
   if (event.target.name === 'recommended_choice') document.querySelector('#purchase-game').value = event.target.value;
 });
@@ -221,16 +243,18 @@ const demoMode = location.hostname.endsWith('.github.io') || new URLSearchParams
 if (demoMode) document.querySelector('#demo-notice').hidden = false;
 let soundsEnabled = false;
 let audioContext;
-photoInput.addEventListener('change', () => {
-  const file = photoInput.files?.[0];
+photoInput.addEventListener('change', () => showPhoto(photoInput, photoPreview));
+rulesPhotoInput.addEventListener('change', () => showPhoto(rulesPhotoInput, rulesPreview));
+function showPhoto(input, preview) {
+  const file = input.files?.[0];
   if (!file) {
-    photoPreview.removeAttribute('src');
-    photoPreview.classList.remove('visible');
+    preview.removeAttribute('src');
+    preview.classList.remove('visible');
     return;
   }
-  photoPreview.src = URL.createObjectURL(file);
-  photoPreview.classList.add('visible');
-});
+  preview.src = URL.createObjectURL(file);
+  preview.classList.add('visible');
+}
 soundToggle.addEventListener('click', () => {
   soundsEnabled = !soundsEnabled;
   if (soundsEnabled) audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -266,7 +290,7 @@ form.addEventListener('submit', async (event) => {
         <h2>Where to buy ${escapeHtml(purchaseTitle)}</h2>
         <p>${escapeHtml(data.answer)}</p>
         ${reports.map(renderWorker).join('')}`;
-      clearEntryForm(form);
+      savedResults.purchase = result.innerHTML;
       revealResult(result);
       return;
     }
@@ -284,7 +308,6 @@ form.addEventListener('submit', async (event) => {
       shelfNotes: document.querySelector('#shelf-notes').value,
     };
     showCollectionReport(data, savedContext);
-    clearEntryForm(form);
     revealResult(result);
   } catch (error) {
     document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
@@ -318,7 +341,6 @@ rulesForm.addEventListener('submit', async (event) => {
       <ul>${(data.official_basis || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}${(data.uncertainties || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
       <h3>Sources</h3>
       <ul>${(data.sources || []).map(source => `<li><strong>${escapeHtml(source.source_type)}</strong>: ${escapeHtml(source.title)} — ${escapeHtml(source.version)}${source.page ? `, page ${escapeHtml(source.page)}` : ''}${source.url ? ` — <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener">open source</a>` : ` — ${escapeHtml(source.url_status)}`}</li>`).join('')}</ul>`;
-    clearEntryForm(rulesForm);
     revealResult(rulesResult);
   } catch (error) {
     rulesResult.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
@@ -340,6 +362,10 @@ result.addEventListener('submit', async (event) => {
   if (event.target.id !== 'correction-form') return;
   event.preventDefault();
   const correction = event.target;
+  const chosenFavorites = [...correction.querySelectorAll('input[name="corrected_favorite"]:checked')]
+    .map(box => box.closest('.correction-row')?.querySelector('input[name="corrected_title"]')?.value.trim())
+    .filter(Boolean);
+  document.querySelector('#favorites').value = chosenFavorites.join(', ');
   const submit = correction.querySelector('button');
   submit.disabled = true;
   submit.textContent = 'Updating the names…';
@@ -383,6 +409,7 @@ function showCollectionReport(data, saved) {
     ${rememberRecommendations(reports)}
     ${reports.map(renderWorker).join('')}
     <p><small>Some game names may be hard for us to read. Please check them before we use your shelf for recommendations.</small></p>`;
+  savedResults.shelf = result.innerHTML;
 }
 function correctionRow(game, favorites, index, blank = false) {
   const title = blank ? '' : game.title;
@@ -395,13 +422,51 @@ function favoriteNames(favorites) {
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 }
-function clearEntryForm(target) {
-  target.reset();
-  if (target === form) {
-    photoPreview.removeAttribute('src');
-    photoPreview.classList.remove('visible');
-    purchaseSearch.value = 'false';
+function currentTask() {
+  const rules = document.querySelector('#rules-view');
+  const collection = document.querySelector('#collection-view');
+  if (rules.classList.contains('active')) return 'rules';
+  if (collection.classList.contains('active') && collection.classList.contains('purchase-mode')) return 'purchase';
+  if (collection.classList.contains('active')) return 'shelf';
+  return 'all';
+}
+function clearSaved(task) {
+  if (task === 'shelf' || task === 'all') {
+    photoInput.value = '';
+    showPhoto(photoInput, photoPreview);
+    document.querySelector('#shelf-notes').value = '';
+    document.querySelector('#favorites').value = '';
+    document.querySelector('#player-count').value = '2';
+    savedResults.shelf = '';
   }
+  if (task === 'purchase' || task === 'all') {
+    document.querySelector('#purchase-preference').value = 'either';
+    document.querySelector('#purchase-game').value = '';
+    document.querySelector('#zip-code').value = '';
+    document.querySelector('#local-store-search').checked = false;
+    document.querySelector('#recommended-choices').hidden = true;
+    document.querySelector('#recommended-choices').innerHTML = '';
+    purchaseSearch.value = 'false';
+    savedResults.purchase = '';
+  }
+  if (task === 'rules' || task === 'all') {
+    rulesForm.reset();
+    showPhoto(rulesPhotoInput, rulesPreview);
+    rulesResult.hidden = true;
+    rulesResult.innerHTML = '';
+  }
+  if (task === 'purchase' || task === 'shelf' || task === 'all') {
+    result.hidden = true;
+    result.innerHTML = '';
+  }
+}
+function restoreResult(kind) {
+  if (!savedResults[kind]) {
+    result.hidden = true;
+    return;
+  }
+  result.innerHTML = savedResults[kind];
+  result.hidden = false;
 }
 result.addEventListener('click', (event) => {
   const button = event.target.closest('.buy-recommendation');
@@ -419,7 +484,8 @@ function rememberRecommendations(reports) {
 function openBuyPage(selectedTitle) {
   showView('collection-view');
   document.querySelector('#collection-view').classList.add('purchase-mode');
-  result.hidden = true;
+  clearButton.textContent = 'Clear this page';
+  restoreResult('purchase');
   const choices = document.querySelector('#recommended-choices');
   if (!recommendedGames.length) {
     choices.hidden = true;
@@ -497,9 +563,9 @@ function demoAnalyzeResponse(formData) {
     },
     worker_reports: [
       {worker:"Games for you", summary:"Five sample games based on the example favorites.", recommendations:[
-        {title:"Apiary", reason:"A strategic game with a satisfying progression system.", play_choice:"physical"},
-        {title:"Earth", reason:"A nature-themed game with flexible turns.", play_choice:"online", play_link:"https://boardgamearena.com", play_label:"Board Game Arena"},
-        {title:"Ark Nova", reason:"A large strategy game with a strong collection feeling.", play_choice:"physical"},
+        {title:"Apiary", reason:"A strategic game with a satisfying progression system.", play_choice:"physical", setup_burden:"Short setup"},
+        {title:"Earth", reason:"A nature-themed game with flexible turns.", play_choice:"online", play_link:"https://boardgamearena.com", play_label:"Board Game Arena", setup_burden:"Long setup and bookkeeping"},
+        {title:"Ark Nova", reason:"A large strategy game with a strong collection feeling.", play_choice:"physical", setup_burden:"Can be set up in a few minutes"},
         {title:"Barrage", reason:"A planning game with interesting timing choices.", play_choice:"physical"},
         {title:"Brass: Birmingham", reason:"A classic economic game for fans of tough decisions.", play_choice:"online", play_link:"https://boardgamearena.com", play_label:"Board Game Arena"}
       ]},
@@ -538,18 +604,21 @@ function demoRulesResponse() {
 function renderWorker(report) {
   if (report.worker !== 'Purchase Advisor') {
     if (report.worker === 'Player Count Advisor') {
-      return `<div class="worker"><h3>👥 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong><br>Publisher range: ${escapeHtml(x.publisher_range)} · Official guidance: ${escapeHtml(x.official_recommendation)} · Community-reported best: <strong>${escapeHtml(x.optimal_player_count)}</strong><br>${escapeHtml(x.reason)}<br><small>Setup: ${escapeHtml(x.setup_burden)}</small></p>`).join('')}</div>`;
+      return `<div class="worker"><h3>👥 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong><br>Publisher range: ${escapeHtml(x.publisher_range)} · Official guidance: ${escapeHtml(x.official_recommendation)} · Community-reported best: <strong>${escapeHtml(x.optimal_player_count)}</strong><br>${escapeHtml(x.reason)}<br><small>Setup: ${escapeHtml(x.setup_burden || '')}</small>${playAdvice(x, {setup:false, buyButton:false})}</p>`).join('')}</div>`;
     }
     const buyable = report.worker === 'Games for you' || report.worker === 'New games';
     return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}${buyable ? playAdvice(x) : ''}</p>`).join('')}</div>`;
   }
   return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map(purchaseOption).join('')}</div></div>`;
 }
-function playAdvice(item) {
+function playAdvice(item, options = {}) {
+  const setup = options.setup === false ? '' : knownDetail(item.setup_burden);
+  const setupNote = setup ? ` <small>(${escapeHtml(setup)})</small>` : '';
   if (item.play_choice === 'online' && item.play_link) {
-    return `<br>Better online: <a href="${escapeHtml(item.play_link)}" target="_blank" rel="noopener">${escapeHtml(item.play_label || 'Play online')}</a>`;
+    return `<br>Better online: <a href="${escapeHtml(item.play_link)}" target="_blank" rel="noopener">${escapeHtml(item.play_label || 'Play online')}</a>${setupNote}`;
   }
-  return `<br>Better to buy and play in person<br><button type="button" class="buy-recommendation" data-title="${escapeHtml(item.title)}">See where to buy</button>`;
+  const buyButton = options.buyButton === false ? '' : `<br><button type="button" class="buy-recommendation" data-title="${escapeHtml(item.title)}">See where to buy</button>`;
+  return `<br>Better to buy and play in person${setupNote}${buyButton}`;
 }
 function purchaseOption(item) {
   const note = knownDetail(item.note) || knownDetail(item.local_search_note);
