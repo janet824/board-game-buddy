@@ -19,6 +19,9 @@ def compose_answer(shelf: ShelfReport, reports: list[WorkerReport], has_photo: b
         "No titles were detected from a shelf photo" if has_photo
         else "No shelf photo was provided"
     )
+    purchase_report = next((report for report in reports if report.worker == "Purchase Advisor"), None)
+    if purchase_report and recommendation_report is None:
+        return purchase_report.summary
     suggestions = ", ".join(dict.fromkeys(recommendations)) or "No recommendations were returned"
     review_note = (
         "Review the detected titles before treating the collection as final."
@@ -34,10 +37,10 @@ def compose_answer(shelf: ShelfReport, reports: list[WorkerReport], has_photo: b
 
 
 async def run_buddy(request: BuddyRequest) -> BuddyResponse:
-    if not request.image_data_url:
+    if request.context.purchase_search_requested or not request.image_data_url:
         shelf = ShelfReport(
-            observations=["No shelf photo was provided."],
-            uncertainty=["Upload a shelf photo so the shelf interpreter can identify games."],
+            observations=[] if request.context.purchase_search_requested else ["No shelf photo was provided."],
+            uncertainty=[] if request.context.purchase_search_requested else ["Upload a shelf photo so the shelf interpreter can identify games."],
         )
     else:
         shelf = await interpret_shelf(request.image_data_url, request.context)
@@ -46,5 +49,9 @@ async def run_buddy(request: BuddyRequest) -> BuddyResponse:
         answer=compose_answer(shelf, reports, bool(request.image_data_url)),
         shelf_report=shelf,
         worker_reports=reports,
-        agents_used=["Board Game Buddy", "Shelf Interpreter", "Game Recommender", "Player Count Advisor"],
+        agents_used=(
+            ["Board Game Buddy", "Player Count Advisor", "Purchase Advisor"]
+            if request.context.purchase_search_requested
+            else ["Board Game Buddy", "Shelf Interpreter", "Game Recommender", "Player Count Advisor"]
+        ),
     )

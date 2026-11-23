@@ -240,12 +240,32 @@ soundToggle.addEventListener('click', () => {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (event.submitter !== purchaseSubmit) purchaseSearch.value = 'false';
-  button.disabled = true; button.textContent = 'The agents are thinking…'; result.hidden = false;
+  const purchaseOnly = purchaseSearch.value === 'true';
+  if (purchaseOnly && !document.querySelector('#purchase-game').value.trim()) {
+    result.hidden = false;
+    result.innerHTML = '<p class="error">Type the game you want to buy first.</p>';
+    return;
+  }
+  button.disabled = true;
+  purchaseSubmit.disabled = true;
+  button.textContent = 'The agents are thinking…';
+  purchaseSubmit.textContent = purchaseOnly ? 'Searching purchase options…' : 'Search trusted purchase options';
+  result.hidden = false;
   document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
   document.querySelector('[data-agent="shelf"]')?.classList.add('thinking');
-  result.innerHTML = '<p>Reading the shelf and comparing your preferences…</p>';
+  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and trusted places to buy the game you typed…' : 'Reading the shelf and comparing your preferences…'}</p>`;
   try {
     const data = await requestJson('/api/analyze', { method:'POST', body:new FormData(form) });
+    if (purchaseOnly) {
+      const reports = data.worker_reports || [];
+      result.innerHTML = `
+        <div class="report-ready">✓ Your purchase options are ready</div>
+        <h2>Where to buy ${escapeHtml(document.querySelector('#purchase-game').value.trim())}</h2>
+        <p>${escapeHtml(data.answer)}</p>
+        ${reports.map(renderWorker).join('')}`;
+      revealResult(result);
+      return;
+    }
     markAgent('shelf');
     document.querySelector('[data-agent="shelf"]')?.classList.remove('thinking');
     document.querySelector('[data-agent="recommend"]')?.classList.add('thinking');
@@ -277,7 +297,10 @@ form.addEventListener('submit', async (event) => {
     document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
     result.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
   } finally {
-    button.disabled = false; button.textContent = 'Meet my Board Game Buddy';
+    button.disabled = false;
+    purchaseSubmit.disabled = false;
+    button.textContent = 'Meet my Board Game Buddy';
+    purchaseSubmit.textContent = 'Search trusted purchase options';
   }
 });
 rulesForm.addEventListener('submit', async (event) => {
@@ -379,7 +402,15 @@ function renderWorker(report) {
     }
     return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}</p>`).join('')}</div>`;
   }
-  return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p><p class="purchase-meta"><strong>${escapeHtml(x.store_name || 'Store not verified')}</strong><br>${escapeHtml(x.price || 'Price not verified')} · ${escapeHtml(x.availability || 'Availability not verified')}</p>${x.primary_url ? `<a href="${escapeHtml(x.primary_url)}" target="_blank" rel="noopener">Primary option</a>` : ''}${x.secondary_url ? ` · <a href="${escapeHtml(x.secondary_url)}" target="_blank" rel="noopener">Value option</a>` : ''}${x.big_box_url ? `<hr><strong>Big-box option: ${escapeHtml(x.big_box_store || 'Retailer')}</strong><br>${escapeHtml(x.big_box_price || 'Price not verified')} · ${escapeHtml(x.big_box_availability || 'Availability not verified')}<br><a href="${escapeHtml(x.big_box_url)}" target="_blank" rel="noopener">Open big-box option</a>` : ''}<br><button type="button" class="choose-purchase" onclick="choosePurchase(this)">Choose this option</button><br><small>${escapeHtml(x.local_search_note || 'Call first if local stock is important.')}</small></article>`).join('')}</div></div>`;
+  return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p>${purchaseFacts(x.store_name, x.price, x.availability)}${x.primary_url ? `<a href="${escapeHtml(x.primary_url)}" target="_blank" rel="noopener">Primary option</a>` : ''}${x.secondary_url ? ` · <a href="${escapeHtml(x.secondary_url)}" target="_blank" rel="noopener">Value option</a>` : ''}${x.big_box_url ? `<hr><strong>Big-box option${knownDetail(x.big_box_store) ? `: ${escapeHtml(knownDetail(x.big_box_store))}` : ''}</strong>${purchaseFacts('', x.big_box_price, x.big_box_availability)}<a href="${escapeHtml(x.big_box_url)}" target="_blank" rel="noopener">Open big-box option</a>` : ''}<br><button type="button" class="choose-purchase" onclick="choosePurchase(this)">Choose this option</button>${knownDetail(x.local_search_note) ? `<br><small>${escapeHtml(knownDetail(x.local_search_note))}</small>` : ''}</article>`).join('')}</div></div>`;
+}
+function knownDetail(value) {
+  const text = String(value || '').trim();
+  return text && !/not verified|unknown|n\/a/i.test(text) ? text : '';
+}
+function purchaseFacts(store, price, availability) {
+  const facts = [knownDetail(store), knownDetail(price), knownDetail(availability)].filter(Boolean);
+  return facts.length ? `<p class="purchase-meta">${facts.map(item => `<span>${escapeHtml(item)}</span>`).join(' · ')}</p>` : '';
 }
 function choosePurchase(button) {
   document.querySelectorAll('.purchase-card').forEach(card => {

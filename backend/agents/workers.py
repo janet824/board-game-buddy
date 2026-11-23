@@ -186,18 +186,20 @@ async def assess_player_count(shelf: ShelfReport, context: UserContext) -> Worke
 
 
 async def run_workers(shelf: ShelfReport, context: UserContext) -> list[WorkerReport]:
-    reports = list(await asyncio.gather(
+    if context.purchase_search_requested:
+        query = context.purchase_query.strip()
+        if not query:
+            return [WorkerReport(
+                worker="Purchase Advisor",
+                summary="Type the game you want to buy, then search again.",
+            )]
+        player_context = context.model_copy(update={"games_to_assess": query})
+        player_report, purchase_report = await asyncio.gather(
+            assess_player_count(ShelfReport(), player_context),
+            advise_purchases(titles=[query], owned_titles=[], context=context),
+        )
+        return [player_report, purchase_report]
+    return list(await asyncio.gather(
         recommend_games(shelf, context),
         assess_player_count(shelf, context),
     ))
-    recommendation_report = next(
-        report for report in reports if report.worker == "Game Recommender"
-    )
-    if context.purchase_search_requested:
-        purchase_report = await advise_purchases(
-            titles=[item["title"] for item in recommendation_report.recommendations],
-            owned_titles=[game.title for game in shelf.games],
-            context=context,
-        )
-        reports.append(purchase_report)
-    return reports

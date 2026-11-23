@@ -74,13 +74,13 @@ async def advise_purchases(
             "or Gamefound. If you cannot provide a trustworthy direct link, leave it blank."
         ),
         prompt=(
-            f"Candidate games: {', '.join(titles) or 'none'}\n"
+            f"Game to buy: {context.purchase_query or ', '.join(titles) or 'none'}\n"
             f"Owned games to exclude: {', '.join(owned_titles) or 'none'}\n"
-            f"Specific purchase request: {context.purchase_query or 'none'}\n"
             f"Condition preference: {context.purchase_preference}\n"
             f"Local search consent: {context.local_store_search_consent}\n"
             f"ZIP code: {context.zip_code or 'not provided'}\n"
-            "Return no owned games. If the specific purchase request is a game family "
+            "Search only for the game named above. Do not add games from an earlier "
+            "recommendation. Return no owned games. If the request is a game family "
             "with multiple editions or expansions (for example Azul or Catan), do not "
             "search yet unless the player selected 'any version'. If 'any version' was "
             "selected, list every relevant verified version or expansion found, clearly "
@@ -89,7 +89,7 @@ async def advise_purchases(
             "version, the base game, or a named expansion. A "
             "local_search_note must say what still needs to be checked if no local store "
             "website was supplied. Include the store name, displayed price, and displayed "
-            "availability exactly as found; if any is unknown, say 'not verified'. Also "
+            "availability exactly as found. Leave any unknown price, store, or stock field blank. Also "
             "include a third big-box option from Target, Walmart, or a comparable trusted "
             "retailer when one can be verified; otherwise leave its fields blank."
         ),
