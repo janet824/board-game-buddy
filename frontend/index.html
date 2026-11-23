@@ -252,12 +252,15 @@ form.addEventListener('submit', async (event) => {
     playSound('cubes');
     const games = data.shelf_report.games || [];
     const reports = data.worker_reports || [];
+    const collectionMessage = games.length
+      ? games.map(g => `<span class="pill">${escapeHtml(g.title)} · ${escapeHtml(g.shelf_group)}</span>`).join('')
+      : '<p>No shelf photo was uploaded. Any games entered in “Games to evaluate” were still sent to the Player Count Advisor.</p>';
     result.innerHTML = `
       <div class="report-ready">✓ Your report is ready</div>
       <h2>Your Board Game Buddy report</h2>
       <p>${escapeHtml(data.answer)}</p>
-      <h3>Detected games</h3>
-      <div>${games.length ? games.map(g => `<span class="pill">${escapeHtml(g.title)} · ${escapeHtml(g.shelf_group)}</span>`).join('') : '<p>No games detected yet.</p>'}</div>
+      <h3>${games.length ? 'Games detected in the shelf photo' : 'Typed games used for analysis'}</h3>
+      <div>${collectionMessage}</div>
       ${reports.map(renderWorker).join('')}
       <p><small>Low-confidence titles should be reviewed before using this collection for decisions.</small></p>`;
     revealResult(result);
