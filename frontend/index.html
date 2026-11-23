@@ -38,7 +38,6 @@
     .layout { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:18px; }
     .card { background:#fffdf8; border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:0 10px 0 #c9a97655,0 16px 30px #57472c18; }
     .card-heading { display:flex; gap:12px; align-items:flex-start; }
-    .step-token { display:grid; place-items:center; flex:0 0 38px; height:38px; border-radius:12px; background:var(--coral); color:white; font-weight:900; box-shadow:0 4px 0 #b95d4d; }
     label { display:block; font-weight:700; margin:15px 0 6px; }
     textarea, input, select, button { width:100%; min-height:46px; border-radius:10px; border:1px solid #cbd5ce; padding:11px; font:inherit; }
     textarea, input, select { background:#fff; color:var(--ink); box-shadow:inset 0 1px 2px #24302d12; }
@@ -111,7 +110,7 @@
   <nav class="workflow" aria-label="Choose a Board Game Buddy task">
     <button type="button" data-show-view="collection-view">📸 Explore my shelf <small>Find games that fit you</small></button>
     <button type="button" data-show-view="rules-view">📖 Solve a rules question <small>Get an evidence-backed ruling</small></button>
-    <button type="button" id="buy-button">🛒 Find where to buy <small>Compare trusted options</small></button>
+    <button type="button" id="buy-button">🛒 Find where to buy <small>Compare online, local, and big-box prices</small></button>
   </nav>
   <div class="agent-strip" aria-label="Board Game Buddy agents">
     <span class="agent" data-agent="shelf"><span class="agent-icon">⬡</span><span>Shelf Interpreter<small>reads your collection</small></span></span>
@@ -123,7 +122,7 @@
     <div class="layout view" id="collection-view">
       <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
       <section class="card" id="shelf-card">
-        <div class="card-heading"><span class="step-token">1</span><div><h2>Show me your shelf</h2><p class="intro">Give your buddy a snapshot of your collection.</p></div></div>
+        <div class="card-heading"><div><h2>Show me your shelf</h2><p class="intro">Give your buddy a snapshot of your collection.</p></div></div>
         <div class="drop">
           <label for="photo">Shelf photo <small>(optional)</small></label>
           <input id="photo" name="photo" type="file" accept="image/*">
@@ -135,7 +134,7 @@
         </div>
       </section>
       <section class="card" id="recommendation-card">
-        <div class="card-heading"><span class="step-token">2</span><div><h2>Tell me what you like</h2><p class="intro">The more you share, the more personal the recommendations.</p></div></div>
+        <div class="card-heading"><div><h2>Tell me what you like</h2><p class="intro">The more you share, the more personal the recommendations.</p></div></div>
         <label for="favorites">Favorite games</label>
         <textarea id="favorites" name="favorites" placeholder="Example: Brass: Birmingham, The Gallerist, and games with deep strategy"></textarea>
         <label for="player-count">Typical number of players</label>
@@ -143,7 +142,7 @@
         <button id="submit" type="submit">Meet my Board Game Buddy</button>
       </section>
       <section class="card purchase-panel">
-        <div class="card-heading"><span class="step-token">2</span><div><h2>Find where to buy</h2><p class="intro">Compare trusted online, local, and big-box options.</p></div></div>
+        <div class="card-heading"><div><h2>Find where to buy</h2><p class="intro">Compare the cheapest online, local, and big-box prices.</p></div></div>
         <label for="purchase-preference">If you decide to buy, what condition do you prefer?</label>
         <select id="purchase-preference" name="purchase_preference">
           <option value="either">New or used—the best value</option>
@@ -161,17 +160,19 @@
           Search nearby game-store websites if I provide my ZIP code
         </label>
         <input id="purchase-search" name="purchase_search" type="hidden" value="false">
-        <button id="purchase-submit" type="submit">Search trusted purchase options</button>
+        <button id="purchase-submit" type="submit">Search purchase options</button>
       </section>
     </div>
   </form>
   <section class="card view" id="rules-view" style="margin-top:24px;">
     <button type="button" class="back-button" data-show-view="home-view">← Back to tasks</button>
-    <div class="card-heading"><span class="step-token">3</span><div><h2>Ask a live rules question</h2><p class="intro">Photograph the relevant rulebook page, reference card, or player aid while you play.</p></div></div>
+    <div class="card-heading"><div><h2>Ask a live rules question</h2><p class="intro">Name the game and ask the question. A photo is optional.</p></div></div>
     <form id="rules-form">
       <label for="rulebook-photo">Rulebook or card photo <small>(optional)</small></label>
       <input id="rulebook-photo" name="rulebook_photo" type="file" accept="image/*">
-      <small>Upload a page for source-based help, or skip it for a cautious answer based on your question.</small>
+      <small>A card or page photo is optional. The helper always checks the game's rulebook and other rules sources from the game name and question.</small>
+      <label for="game-name">Game name</label>
+      <input id="game-name" name="game_name" placeholder="Example: Trickerion" required>
       <label for="question">What is confusing?</label>
       <textarea id="question" name="question" placeholder="Example: I am Electra playing Iron Maiden as a guest performer. Can I break normal placement rules?" required></textarea>
       <label for="rules-expansions">Expansions in use</label>
@@ -247,11 +248,11 @@ form.addEventListener('submit', async (event) => {
   button.disabled = true;
   purchaseSubmit.disabled = true;
   button.textContent = 'The agents are thinking…';
-  purchaseSubmit.textContent = purchaseOnly ? 'Searching purchase options…' : 'Search trusted purchase options';
+  purchaseSubmit.textContent = purchaseOnly ? 'Searching purchase options…' : 'Search purchase options';
   result.hidden = false;
   document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
   document.querySelector('[data-agent="shelf"]')?.classList.add('thinking');
-  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and trusted places to buy the game you typed…' : 'Reading the shelf and comparing your preferences…'}</p><p>This can take a minute. Keep this page open and the result will appear when it is ready.</p>`;
+  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and comparing online, local, and big-box prices…' : 'Reading the shelf and comparing your preferences…'}</p><p>This can take a minute. Keep this page open and the result will appear when it is ready.</p>`;
   try {
     const purchaseTitle = document.querySelector('#purchase-game').value.trim();
     const data = await requestJob('/api/analyze', { method:'POST', body:new FormData(form) }, seconds => {
@@ -292,7 +293,7 @@ form.addEventListener('submit', async (event) => {
     button.disabled = false;
     purchaseSubmit.disabled = false;
     button.textContent = 'Meet my Board Game Buddy';
-    purchaseSubmit.textContent = 'Search trusted purchase options';
+    purchaseSubmit.textContent = 'Search purchase options';
   }
 });
 rulesForm.addEventListener('submit', async (event) => {
@@ -300,7 +301,7 @@ rulesForm.addEventListener('submit', async (event) => {
   rulesButton.disabled = true;
   rulesButton.textContent = 'Checking the rules…';
   rulesResult.hidden = false;
-  rulesResult.innerHTML = '<p>Reading the page and separating official rules from interpretations…</p><p>This can take a minute. Keep this page open and the answer will appear when it is ready.</p>';
+  rulesResult.innerHTML = '<p>Checking the rulebook and other rules sources for this game…</p><p>This can take a minute. Keep this page open and the answer will appear when it is ready.</p>';
   try {
     const data = await requestJob('/api/rules', { method:'POST', body:new FormData(rulesForm) }, seconds => {
       const note = rulesResult.querySelector('p:last-child');
@@ -517,7 +518,11 @@ function demoPurchaseResponse(title) {
   return {
     answer:`Sample places to look for ${title || 'this game'}.`,
     shelf_report:{games:[]},
-    worker_reports:[{worker:"Purchase Advisor", summary:"Demo store search only.", recommendations:[{title:title || 'Sample game', reason:"These buttons open major retailers in the full app.", retailer_links:[{store:"Amazon", url:"https://www.amazon.com"},{store:"eBay", url:"https://www.ebay.com"}]}]}]
+    worker_reports:[{worker:"Purchase Advisor", summary:`Lowest listed price: $29.99 at Sample online shop (Online). This preview compares three kinds of stores for ${title || 'this game'}.`, recommendations:[
+      {title:title || 'Sample game', channel:"Online", store_name:"Sample online shop", price:"$29.99", availability:"In stock", url:"", reason:"Lowest listed price in this preview.", note:"Confirm the edition before buying."},
+      {title:title || 'Sample game', channel:"Local", store_name:"Sample game store", price:"$34.99", availability:"Call to confirm", url:"", reason:"A nearby game store.", note:"Call before you visit. Stock pages go stale."},
+      {title:title || 'Sample game', channel:"Big box", store_name:"Target", price:"$32.99", availability:"Limited stock", url:"", reason:"Big-box price comparison.", note:"Confirm the price in the store."}
+    ]}]
   };
 }
 function demoRulesResponse() {
@@ -538,15 +543,12 @@ function renderWorker(report) {
     const buyable = report.worker === 'Games for you' || report.worker === 'New games';
     return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}${buyable ? `<br><button type="button" class="buy-recommendation" data-title="${escapeHtml(x.title)}">See where to buy</button>` : ''}</p>`).join('')}</div>`;
   }
-  return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p>${purchaseFacts(x.store_name, x.price, x.availability)}<p>${retailerLinks(x)}</p>${knownDetail(x.local_search_note) ? `<br><small>${escapeHtml(knownDetail(x.local_search_note))}</small>` : ''}</article>`).join('')}</div></div>`;
+  return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map(purchaseOption).join('')}</div></div>`;
 }
-function retailerLinks(item) {
-  const links = item.retailer_links?.length ? item.retailer_links : [
-    item.primary_url && {store:'Amazon', url:item.primary_url},
-    item.secondary_url && {store:'eBay', url:item.secondary_url},
-    item.big_box_url && {store:item.big_box_store || 'Target', url:item.big_box_url},
-  ].filter(Boolean);
-  return links.map(link => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener">Search ${escapeHtml(link.store)}</a>`).join('');
+function purchaseOption(item) {
+  const note = knownDetail(item.note) || knownDetail(item.local_search_note);
+  const link = item.url ? `<p><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Open listing</a></p>` : '';
+  return `<article class="purchase-card"><h4>${escapeHtml(item.channel || 'Option')}</h4><p><strong>${escapeHtml(knownDetail(item.store_name) || 'No store listed')}</strong></p>${purchaseFacts('', item.price, item.availability)}${knownDetail(item.reason) ? `<p>${escapeHtml(item.reason)}</p>` : ''}${note ? `<p><small>${escapeHtml(note)}</small></p>` : ''}${link}</article>`;
 }
 function knownDetail(value) {
   const text = String(value || '').trim();

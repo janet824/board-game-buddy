@@ -110,12 +110,16 @@ async def interpret_shelf(image_data_url: str, context: UserContext) -> ShelfRep
             "You are the shelf interpreter for Board Game Buddy. Read board-game box "
             "spines and covers conservatively. Never invent a title. Preserve the user's "
             "semantic shelf groups from shelf_notes. If a title is uncertain, include it "
-            "with low confidence and explain the visual evidence."
+            "with low confidence and explain the visual evidence. When the notes say an "
+            "area holds favorites, set shelf_group to exactly favorite for every game in "
+            "that area and name the area in evidence, such as 'top shelf'."
         ),
         prompt=(
             f"Identify visible board games in this shelf photo. User notes: {context.shelf_notes or 'none'} "
             "Return one entry per distinct game, not per box when an expansion is obvious. "
-            "Use shelf_group values such as favorite, unplayed, evaluating, or unknown."
+            "If the notes say the top shelf, upper shelf, or another area is the favorites, "
+            "those games must use shelf_group 'favorite' and evidence must name that area. "
+            "Use shelf_group values favorite, unplayed, evaluating, owned, or unknown."
         ),
         schema_name="shelf_report",
         schema=SHELF_SCHEMA,
@@ -145,8 +149,35 @@ def _key(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", title.lower())
 
 
+def _favorite_titles(shelf: ShelfReport, context: UserContext) -> list[str]:
+    titles = [part.strip() for part in re.split(r"[,;\n]", context.favorites) if part.strip()]
+    seen = {_key(title) for title in titles}
+    for game in shelf.games:
+        if "fav" not in game.shelf_group.lower():
+            continue
+        key = _key(game.title)
+        if key and key not in seen:
+            titles.append(game.title)
+            seen.add(key)
+    return titles
+
+
+def _summary_with_favorites(summary: str, favorites: list[str]) -> str:
+    if not favorites:
+        return summary
+    cleaned = re.sub(
+        r"[^.?!]*(?:no favorites|without (?:any )?favorites|favorites were not|no favorite games|not selected any favorites)[^.?!]*[.?!]?",
+        "",
+        summary or "",
+        flags=re.IGNORECASE,
+    ).strip()
+    lead = f"These suggestions are based on your favorites: {', '.join(favorites)}."
+    return f"{lead} {cleaned}".strip()
+
+
 async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[WorkerReport]:
     titles = ", ".join(game.title for game in shelf.games)
+    favorites = _favorite_titles(shelf, context)
     result = await ask_json(
         system=(
             "You are the recommendation worker. Recommend board games based on the "
@@ -154,17 +185,22 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
             "as the default: reason from games that players with similar collections and "
             "favorites also tend to enjoy, rather than matching only mechanics or themes. "
             "Do not claim live prices or current availability. "
-            "Explain the match in plain language. Never add the word candidate to a title."
+            "Explain the match in plain language. Never add the word candidate to a title. "
+            "Favorites are the user's taste even when they already own those games."
         ),
         prompt=(
             f"Owned or photographed games: {titles or 'unknown'}. "
-            f"Favorite games: {context.favorites or 'not provided'}. "
+            f"Shelf groups: {', '.join(f'{game.title} ({game.shelf_group})' for game in shelf.games) or 'unknown'}. "
+            f"Favorite games: {', '.join(favorites) or 'not provided'}. "
+            "The favorite games are the taste to match, including games marked favorite from the shelf notes. "
+            "Recommend different games that people who enjoy those favorites also tend to enjoy. "
+            "Do not say that no favorites were selected when favorite games are listed. "
             f"Typical player count: {context.typical_player_count}. "
             f"Purchase preference: {context.purchase_preference}. "
             f"Local-store search consent: {context.local_store_search_consent}; "
             f"ZIP code supplied: {'yes' if context.zip_code else 'no'}. "
             "Return exactly five overall recommendations and exactly five different new games. "
-            "Exclude every game the user already owns or named as a favorite. The new games "
+            "Do not recommend a game the user already owns. The new games "
             "must have been released within the past 12 months or be an active Kickstarter or "
             "Gamefound campaign, and none of them may repeat an overall recommendation. "
             "Explain each match in plain English. Do not append labels such as 'candidate' to titles."
@@ -191,8 +227,8 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
         if len(new_releases) == 5:
             break
     return [
-        WorkerReport(worker="Games for you", summary=result["overall_summary"], recommendations=overall, caveats=[]),
-        WorkerReport(worker="New games", summary=result["new_summary"], recommendations=new_releases, caveats=[]),
+        WorkerReport(worker="Games for you", summary=_summary_with_favorites(result["overall_summary"], favorites), recommendations=overall, caveats=[]),
+        WorkerReport(worker="New games", summary=_summary_with_favorites(result["new_summary"], favorites), recommendations=new_releases, caveats=[]),
     ]
 
 

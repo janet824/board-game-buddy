@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import httpx
+import re
 from urllib.parse import urlparse
 
-from backend.agents.config import ask_json
+import httpx
+
+from backend.agents.config import MODEL_NAME, ask_json, client
 from backend.models import RulesResponse
+
+SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "buff.ly", "adf.ly", "tiny.cc")
 
 RULES_SCHEMA = {
     "type": "object",
@@ -35,60 +39,90 @@ RULES_SCHEMA = {
     "additionalProperties": False,
 }
 
-TRUSTED_HOSTS = (
-    "fantasyflightgames.com",
-    "mindclashgames.com",
-    "beziergames.com",
-    "boardgamegeek.com",
-    "reddit.com",
-    "kickstarter.com",
-    "gamefound.com",
-    "tabletopia.com",
-    "boardgamearena.com",
-    "store.steampowered.com",
-    "apps.apple.com",
-    "play.google.com",
-)
-
-
 async def answer_rules_question(
     *,
     question: str,
+    game_name: str,
     image_data_url: str,
     expansions: str,
     variants: str,
 ) -> RulesResponse:
+    research = await research_rulebook(game_name, question, expansions)
+    photo_note = (
+        "A photo was also uploaded. It may be a card, player aid, or rulebook page. "
+        "Use it as extra evidence. The ruling still comes from the looked-up sources."
+        if image_data_url else
+        "No photo was uploaded. Answer from the looked-up sources."
+    )
     result = await ask_json(
         system=(
-            "You are the Rules Helper for Board Game Buddy. Answer a live board-game "
-            "rules question using the uploaded rulebook or card photo as evidence when "
-            "one is provided. If there is no photo, answer cautiously and clearly say "
-            "that the rulebook needs to be checked. "
-            "Distinguish official printed text from your interpretation. Treat expansion "
-            "rules, variants, and house rules as separate layers. Never invent unreadable "
-            "text or pretend a community interpretation is official. If the image is "
-            "insufficient, say exactly what additional page or card information is needed."
+            "You are the Rules Helper for Board Game Buddy. Whenever a game name and "
+            "question are given, answer from the looked-up rules sources for that game. "
+            "Do this whether the player uploaded a card, a rulebook page, or nothing. "
+            "Use the official rulebook first. Label publisher FAQs separately. Label "
+            "BoardGameGeek or other community notes as unofficial. Do not say the "
+            "rulebook was not provided. Never invent page numbers, quotations, or URLs."
         ),
         prompt=(
+            f"Game: {game_name.strip()}\n"
             f"Player question: {question.strip()}\n"
             f"Expansions in use: {expansions.strip() or 'not specified'}\n"
             f"Variants or house rules: {variants.strip() or 'none stated'}\n"
-            "Give a direct ruling first, then a short numbered explanation. In "
-            "official_basis, describe only what is visible or safely supported by the "
-            "uploaded source, or say that no source was provided; do not fabricate page "
-            "numbers or quotations. For every "
-            "rulebook source, include the exact edition/version and page only when known. "
-            "For publisher sites and forums, identify the source type. Never invent a URL. "
-            "Use an empty URL and url_status='not provided' when no verified link is available."
+            f"{photo_note}\n"
+            f"Rules research from the official rulebook, publisher materials, and other sources:\n{research}\n"
+            "Give a direct ruling first, then a short numbered explanation. Base the "
+            "ruling on those sources. In official_basis, cite the rulebook title, "
+            "edition, and page only when the research shows them, and keep unofficial "
+            "sources out of that list. For every source, identify its type. Never invent "
+            "a URL. Use an empty URL and url_status='not provided' when no link is available."
         ),
         schema_name="rules_response",
         schema=RULES_SCHEMA,
         image_data_url=image_data_url,
     )
     response = RulesResponse.model_validate(result)
+    if not research.startswith("Rulebook lookup failed"):
+        response.answer = drop_missing_rulebook_claims(response.answer)
+        response.ruling = drop_missing_rulebook_claims(response.ruling)
+        response.official_basis = [drop_missing_rulebook_claims(item) for item in response.official_basis]
+        response.official_basis = [item for item in response.official_basis if item]
+        response.uncertainties = [drop_missing_rulebook_claims(item) for item in response.uncertainties]
+        response.uncertainties = [item for item in response.uncertainties if item]
     response.sources = await verify_sources(response.sources)
     response.agents_used = ["Board Game Buddy", "Rules Helper"]
     return response
+
+
+async def research_rulebook(game_name: str, question: str, expansions: str) -> str:
+    prompt = (
+        f"Look up the rules for the board game {game_name.strip()}. "
+        f"Expansions in use: {expansions.strip() or 'none stated'}. "
+        f"The player asked: {question.strip()}. "
+        "Always search the sources below. Do this even if the player also uploaded a card or page. "
+        "1. Open the publisher's official rulebook or rules reference. Report its title, edition, "
+        "publisher, URL, the relevant rule, and the page number when the page shows one. "
+        "2. Check the publisher's FAQ or updated rules when one exists, and label it as a publisher FAQ. "
+        "3. Check BoardGameGeek or another established rules discussion, and label it as unofficial. "
+        "Quote only text you can read. If an expansion changes the rule, include that source too."
+    )
+    try:
+        response = await client().responses.create(
+            model=MODEL_NAME,
+            tools=[{"type": "web_search", "search_context_size": "medium"}],
+            input=prompt,
+        )
+    except Exception as error:
+        return f"Rulebook lookup failed ({error.__class__.__name__}). Do not invent page numbers."
+    return response.output_text or "Rulebook lookup failed. Do not invent page numbers."
+
+
+def drop_missing_rulebook_claims(text: str) -> str:
+    return re.sub(
+        r"[^.?!]*(?:rulebook (?:was not|wasn't|was never) provided|no rulebook was provided|without a rulebook|rulebook needs to be checked|rulebook was not uploaded)[^.?!]*[.?!]?",
+        "",
+        text or "",
+        flags=re.IGNORECASE,
+    ).strip()
 
 
 async def verify_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -109,13 +143,10 @@ async def verify_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
                 source["url"] = ""
                 source["url_status"] = "invalid URL"
                 continue
-            if not any(host == allowed or host.endswith(f".{allowed}") for allowed in TRUSTED_HOSTS):
+            host = host.removeprefix("www.")
+            if not url.startswith("https://") or any(host == blocked or host.endswith(f".{blocked}") for blocked in SHORTENERS):
                 source["url"] = ""
-                source["url_status"] = "untrusted host"
-                continue
-            if not url.startswith("https://"):
-                source["url"] = ""
-                source["url_status"] = "HTTPS required"
+                source["url_status"] = "link not used"
                 continue
             try:
                 response = await http.head(url)
@@ -124,7 +155,7 @@ async def verify_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
                 source["url_status"] = (
                     "verified" if response.status_code < 400 else f"failed ({response.status_code})"
                 )
-                if response.status_code >= 400:
+                if response.status_code == 404:
                     source["url"] = ""
             except (httpx.HTTPError, ValueError):
                 source["url"] = ""

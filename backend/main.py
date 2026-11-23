@@ -137,10 +137,13 @@ def job_status(job_id: str) -> dict:
 @app.post("/api/rules")
 async def rules(
     question: str = Form(default=""),
+    game_name: str = Form(default=""),
     rulebook_photo: UploadFile | None = File(default=None),
     expansions: str = Form(default=""),
     variants: str = Form(default=""),
 ) -> dict:
+    if not game_name.strip():
+        raise HTTPException(status_code=400, detail="Enter the game name.")
     if not question.strip():
         raise HTTPException(status_code=400, detail="Enter a rules question.")
     image_data_url = ""
@@ -153,6 +156,7 @@ async def rules(
     async def work() -> dict:
         result = await answer_rules_question(
             question=question,
+            game_name=game_name,
             image_data_url=image_data_url,
             expansions=expansions,
             variants=variants,
