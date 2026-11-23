@@ -136,6 +136,9 @@
         <div class="card-heading"><span class="step-token">2</span><div><h2>Tell me what you like</h2><p class="intro">The more you share, the more personal the recommendations.</p></div></div>
         <label for="favorites">Favorite games</label>
         <textarea id="favorites" name="favorites" placeholder="Example: Brass: Birmingham, The Gallerist, and games with deep strategy"></textarea>
+        <label for="games-to-assess">Games to evaluate <small>(optional if you skip the photo)</small></label>
+        <textarea id="games-to-assess" name="games_to_assess" placeholder="Example: On Mars, Kanban EV, Gloomhaven"></textarea>
+        <small>Enter games here when you want player-count or physical-versus-digital guidance without uploading a shelf photo.</small>
         <label for="player-count">Typical number of players</label>
         <input id="player-count" name="player_count" type="number" min="1" max="20" value="2">
         <button id="submit" type="submit">Meet my Board Game Buddy</button>
@@ -317,9 +320,11 @@ async function requestJson(url, options) {
 }
 function demoAnalyzeResponse(formData) {
   const favorites = formData instanceof FormData ? (formData.get('favorites') || '').toString().trim() : '';
+  const gamesToAssess = formData instanceof FormData ? (formData.get('games_to_assess') || '').toString().trim() : '';
   const purchaseGame = formData instanceof FormData ? (formData.get('purchase_game') || '').toString().trim() : '';
   const hasPhoto = formData instanceof FormData && formData.get('photo')?.name;
   const favoriteText = favorites || 'the example favorites';
+  const assessedTitle = gamesToAssess.split(/[,;\n]/).map(title => title.trim()).find(Boolean) || 'Wyrmspan';
   const purchaseTitle = purchaseGame || 'Sample purchase option';
   return {
     answer: `${hasPhoto ? 'This browser-only preview received a shelf photo and ' : 'No shelf photo was provided; this browser-only preview '}received these favorites: ${favoriteText}. It prepared example recommendations for demonstration. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.`,
@@ -336,7 +341,7 @@ function demoAnalyzeResponse(formData) {
         {title:"Earth", reason:"A tableau-building game with an engaging nature theme and flexible turns."}
       ]},
       {worker:"Player Count Advisor", summary:"Sample player-count guidance for the example collection.", recommendations:[
-        {title:"Wyrmspan", publisher_range:"1–5", official_recommendation:"See the official rulebook", optimal_player_count:"2–3", reason:"Lower counts keep the turns focused.", setup_burden:"moderate", play_mode:"physical"}
+        {title:assessedTitle, publisher_range:"1–5", official_recommendation:"See the official rulebook", optimal_player_count:"2–3", reason:"Lower counts keep the turns focused.", setup_burden:"moderate", play_mode:"physical"}
       ]},
       {worker:"Purchase Advisor", summary:"Sample purchase comparison. Live prices and stock require the full deployment.", recommendations:[
         {title:purchaseTitle, reason:"Demo card only; live purchase searching requires the full deployment.", store_name:"Example retailer", price:"Not live", availability:"Demo data"}

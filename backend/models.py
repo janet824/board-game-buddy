@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class UserContext(BaseModel):
     favorites: str = ""
+    games_to_assess: str = ""
     typical_player_count: int = Field(default=2, ge=1, le=20)
     shelf_notes: str = ""
     expansions_in_use: str = ""

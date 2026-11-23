@@ -32,6 +32,7 @@ def health() -> dict[str, str]:
 async def analyze(
     photo: UploadFile | None = File(default=None),
     favorites: str = Form(default=""),
+    games_to_assess: str = Form(default=""),
     player_count: int = Form(default=2),
     shelf_notes: str = Form(default=""),
     expansions: str = Form(default=""),
@@ -55,6 +56,7 @@ async def analyze(
             image_data_url=image_data_url,
             context=UserContext(
                 favorites=favorites.strip(),
+                games_to_assess=games_to_assess.strip(),
                 typical_player_count=player_count,
                 shelf_notes=shelf_notes.strip(),
                 expansions_in_use=expansions.strip(),

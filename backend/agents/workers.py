@@ -154,7 +154,7 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> WorkerRep
 
 
 async def assess_player_count(shelf: ShelfReport, context: UserContext) -> WorkerReport:
-    titles = ", ".join(game.title for game in shelf.games)
+    titles = ", ".join(game.title for game in shelf.games) or context.games_to_assess
     result = await ask_json(
         system=(
             "You are the player-count worker. Evaluate whether games are practical for "
