@@ -29,6 +29,15 @@ uvicorn backend.main:app --reload --port 8000
 
 Open http://127.0.0.1:8000/ in a browser.
 
+### Safety before sharing
+
+- Never commit `.env` or paste the Portkey key into source code, screenshots, prompts, or the README. The real key is loaded only from the local `.env` file, which is ignored by Git.
+- `.env.example` contains configuration names only; its blank key is intentional.
+- Uploaded photos and questions are processed for the current request and are not saved by this app.
+- Do not put private names, addresses, ZIP codes, collection screenshots, or rulebook photos into the repository.
+- Purchase and rules links are displayed only when they use HTTPS, come from an approved domain, and pass a reachability check. A failed or untrusted link is suppressed.
+- Recommendations exclude games identified as already owned; uncertain ownership is labeled for review.
+
 The first version intentionally uses a small, visible workflow so a grader can run it quickly:
 
 1. Upload a shelf photo.
