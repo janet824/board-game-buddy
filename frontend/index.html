@@ -497,18 +497,18 @@ function demoAnalyzeResponse(formData) {
     },
     worker_reports: [
       {worker:"Games for you", summary:"Five sample games based on the example favorites.", recommendations:[
-        {title:"Apiary", reason:"A strategic game with a satisfying progression system."},
-        {title:"Earth", reason:"A nature-themed game with flexible turns."},
-        {title:"Ark Nova", reason:"A large strategy game with a strong collection feeling."},
-        {title:"Barrage", reason:"A planning game with interesting timing choices."},
-        {title:"Brass: Birmingham", reason:"A classic economic game for fans of tough decisions."}
+        {title:"Apiary", reason:"A strategic game with a satisfying progression system.", play_choice:"physical"},
+        {title:"Earth", reason:"A nature-themed game with flexible turns.", play_choice:"online", play_link:"https://boardgamearena.com", play_label:"Board Game Arena"},
+        {title:"Ark Nova", reason:"A large strategy game with a strong collection feeling.", play_choice:"physical"},
+        {title:"Barrage", reason:"A planning game with interesting timing choices.", play_choice:"physical"},
+        {title:"Brass: Birmingham", reason:"A classic economic game for fans of tough decisions.", play_choice:"online", play_link:"https://boardgamearena.com", play_label:"Board Game Arena"}
       ]},
       {worker:"New games", summary:"Five sample newer games that do not repeat the first list.", recommendations:[
-        {title:"SETI", reason:"A newer strategy game with a science theme."},
-        {title:"The Lord of the Rings: Duel for Middle-earth", reason:"A compact newer two-player game."},
-        {title:"Bomb Busters", reason:"A recent cooperative deduction game."},
-        {title:"Flip 7", reason:"A fast recent card game."},
-        {title:"Sky Team", reason:"A recent cooperative game with a short play time."}
+        {title:"SETI", reason:"A newer strategy game with a science theme.", play_choice:"physical"},
+        {title:"The Lord of the Rings: Duel for Middle-earth", reason:"A compact newer two-player game.", play_choice:"physical"},
+        {title:"Bomb Busters", reason:"A recent cooperative deduction game.", play_choice:"physical"},
+        {title:"Flip 7", reason:"A fast recent card game.", play_choice:"physical"},
+        {title:"Sky Team", reason:"A recent cooperative game with a short play time.", play_choice:"online", play_link:"https://boardgamearena.com", play_label:"Board Game Arena"}
       ]}
     ],
     agents_used:["Board Game Buddy","Shelf Interpreter","Games for you","New games"]
@@ -538,17 +538,24 @@ function demoRulesResponse() {
 function renderWorker(report) {
   if (report.worker !== 'Purchase Advisor') {
     if (report.worker === 'Player Count Advisor') {
-      return `<div class="worker"><h3>👥 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong><br>Publisher range: ${escapeHtml(x.publisher_range)} · Official guidance: ${escapeHtml(x.official_recommendation)} · Community-reported best: <strong>${escapeHtml(x.optimal_player_count)}</strong><br>${escapeHtml(x.reason)}<br><small>Setup: ${escapeHtml(x.setup_burden)} · Best mode: ${escapeHtml(x.play_mode)}${x.digital_options ? ` · Digital options: ${escapeHtml(x.digital_options)}` : ''}</small></p>`).join('')}</div>`;
+      return `<div class="worker"><h3>👥 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong><br>Publisher range: ${escapeHtml(x.publisher_range)} · Official guidance: ${escapeHtml(x.official_recommendation)} · Community-reported best: <strong>${escapeHtml(x.optimal_player_count)}</strong><br>${escapeHtml(x.reason)}<br><small>Setup: ${escapeHtml(x.setup_burden)}</small></p>`).join('')}</div>`;
     }
     const buyable = report.worker === 'Games for you' || report.worker === 'New games';
-    return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}${buyable ? `<br><button type="button" class="buy-recommendation" data-title="${escapeHtml(x.title)}">See where to buy</button>` : ''}</p>`).join('')}</div>`;
+    return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}${buyable ? playAdvice(x) : ''}</p>`).join('')}</div>`;
   }
   return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map(purchaseOption).join('')}</div></div>`;
+}
+function playAdvice(item) {
+  if (item.play_choice === 'online' && item.play_link) {
+    return `<br>Better online: <a href="${escapeHtml(item.play_link)}" target="_blank" rel="noopener">${escapeHtml(item.play_label || 'Play online')}</a>`;
+  }
+  return `<br>Better to buy and play in person<br><button type="button" class="buy-recommendation" data-title="${escapeHtml(item.title)}">See where to buy</button>`;
 }
 function purchaseOption(item) {
   const note = knownDetail(item.note) || knownDetail(item.local_search_note);
   const link = item.url ? `<p><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Open listing</a></p>` : '';
-  return `<article class="purchase-card"><h4>${escapeHtml(item.channel || 'Option')}</h4><p><strong>${escapeHtml(knownDetail(item.store_name) || 'No store listed')}</strong></p>${purchaseFacts('', item.price, item.availability)}${knownDetail(item.reason) ? `<p>${escapeHtml(item.reason)}</p>` : ''}${note ? `<p><small>${escapeHtml(note)}</small></p>` : ''}${link}</article>`;
+  const price = knownDetail(item.price);
+  return `<article class="purchase-card"><h4>${escapeHtml(item.channel || 'Option')}</h4><p><strong>${escapeHtml(knownDetail(item.store_name) || 'No store listed')}</strong></p>${price ? `<p class="purchase-meta">${escapeHtml(price)}</p>` : ''}${note ? `<p><small>${escapeHtml(note)}</small></p>` : ''}${link}</article>`;
 }
 function knownDetail(value) {
   const text = String(value || '').trim();

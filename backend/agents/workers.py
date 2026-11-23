@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from urllib.parse import urlparse
 
 from backend.agents.config import ask_json
 from backend.agents.purchase import advise_purchases
@@ -44,8 +45,11 @@ REPORT_SCHEMA = {
                     "title": {"type": "string"},
                     "reason": {"type": "string"},
                     "fit": {"type": "string"},
+                    "play_choice": {"type": "string", "enum": ["online", "physical"]},
+                    "play_link": {"type": "string"},
+                    "play_label": {"type": "string"},
                 },
-                "required": ["title", "reason", "fit"],
+                "required": ["title", "reason", "fit", "play_choice", "play_link", "play_label"],
                 "additionalProperties": False,
             },
         },
@@ -70,13 +74,10 @@ PLAYER_SCHEMA = {
                     "optimal_player_count": {"type": "string"},
                     "reason": {"type": "string"},
                     "setup_burden": {"type": "string"},
-                    "play_mode": {"type": "string"},
-                    "digital_options": {"type": "string"},
                 },
                 "required": [
                     "title", "publisher_range", "official_recommendation",
-                    "optimal_player_count", "reason",
-                    "setup_burden", "play_mode", "digital_options",
+                    "optimal_player_count", "reason", "setup_burden",
                 ],
                 "additionalProperties": False,
             },
@@ -149,6 +150,42 @@ def _key(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", title.lower())
 
 
+DIGITAL_HOSTS = (
+    "boardgamearena.com",
+    "tabletopia.com",
+    "store.steampowered.com",
+    "steampowered.com",
+    "apps.apple.com",
+    "play.google.com",
+    "yucata.de",
+    "boardgamecore.net",
+    "boiteajeux.net",
+)
+
+
+def _keep_play_choice(item: dict) -> dict:
+    link = item.get("play_link", "").strip()
+    if item.get("play_choice") == "online" and _digital_link(link):
+        item["play_choice"] = "online"
+        item["play_link"] = link
+        item["play_label"] = item.get("play_label", "").strip() or "Play online"
+        return item
+    item["play_choice"] = "physical"
+    item["play_link"] = ""
+    item["play_label"] = ""
+    return item
+
+
+def _digital_link(url: str) -> bool:
+    if not url.startswith("https://"):
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return False
+    return any(host == allowed or host.endswith(f".{allowed}") for allowed in DIGITAL_HOSTS)
+
+
 def _favorite_titles(shelf: ShelfReport, context: UserContext) -> list[str]:
     titles = [part.strip() for part in re.split(r"[,;\n]", context.favorites) if part.strip()]
     seen = {_key(title) for title in titles}
@@ -186,7 +223,9 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
             "favorites also tend to enjoy, rather than matching only mechanics or themes. "
             "Do not claim live prices or current availability. "
             "Explain the match in plain language. Never add the word candidate to a title. "
-            "Favorites are the user's taste even when they already own those games."
+            "Favorites are the user's taste even when they already own those games. "
+            "For each game, choose online only when a real digital version is easier than "
+            "owning the physical game. Otherwise choose physical."
         ),
         prompt=(
             f"Owned or photographed games: {titles or 'unknown'}. "
@@ -203,7 +242,13 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
             "Do not recommend a game the user already owns. The new games "
             "must have been released within the past 12 months or be an active Kickstarter or "
             "Gamefound campaign, and none of them may repeat an overall recommendation. "
-            "Explain each match in plain English. Do not append labels such as 'candidate' to titles."
+            "Explain each match in plain English. Do not append labels such as 'candidate' to titles. "
+            "For every game set play_choice to online or physical. Choose online only when "
+            "setup, bookkeeping, or rules overhead makes a digital version the better way "
+            "to play, and play_link is the direct https page for that game on Board Game "
+            "Arena, Steam, Tabletopia, Yucata, Board Game Core, Boîte à Jeux, the App Store, "
+            "or Google Play. play_label is the platform name. When physical is better, set "
+            "play_choice to physical and leave play_link and play_label empty. Never invent a platform or URL."
         ),
         schema_name="recommendation_pair",
         schema=PAIR_SCHEMA,
@@ -214,7 +259,7 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
     for item in result["overall"]:
         item["title"] = _clean_title(item.get("title", ""))
         if item["title"] and _key(item["title"]) not in owned and _key(item["title"]) not in {_key(x["title"]) for x in overall}:
-            overall.append(item)
+            overall.append(_keep_play_choice(item))
         if len(overall) == 5:
             break
     chosen = owned | {_key(item["title"]) for item in overall}
@@ -222,7 +267,7 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
     for item in result["new_releases"]:
         item["title"] = _clean_title(item.get("title", ""))
         if item["title"] and _key(item["title"]) not in chosen:
-            new_releases.append(item)
+            new_releases.append(_keep_play_choice(item))
             chosen.add(_key(item["title"]))
         if len(new_releases) == 5:
             break
@@ -250,18 +295,15 @@ async def assess_player_count(
             "player counts in addition to the supported range. Consider BoardGameGeek "
             "discussions, reputable reviews, and "
             "player reports as community evidence, never as official rules. Also assess "
-            "setup time, tedious bookkeeping, rules overhead, and whether digital play "
-            "would reduce friction. Do not claim a digital implementation exists unless "
-            "you can name it. Use plain English and never mention a detected collection "
-            "when the user typed the game."
+            "setup time, tedious bookkeeping, and rules overhead. Use plain English and "
+            "never mention a detected collection when the user typed the game."
         ),
         prompt=(
             f"Games to assess: {titles or 'unknown'}. "
             f"The user usually plays with {context.typical_player_count} player(s). "
             f"{task} "
             "For each, report publisher_range, official_recommendation, "
-            "optimal_player_count, setup_burden, "
-            "play_mode ('physical', 'digital', or 'both'), and named digital_options. "
+            "optimal_player_count, and setup_burden. "
             "Include sources only when their URLs are trustworthy; never invent a page "
             "number or link."
         ),

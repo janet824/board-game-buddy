@@ -74,36 +74,12 @@ async def advise_purchases(
             caveats=["The search waits until the exact edition is clear."],
         )
     research = await research_prices(game, context)
-    result = await ask_json(
-        system=(
-            "You turn purchase research into three options for Board Game Buddy: "
-            "the cheapest online listing, one local game store, and one big-box store. "
-            "Use only prices, stock, stores, and page links that appear in the research. "
-            "Never invent a price or stock count. Leave a field blank when the research "
-            "does not show it. Do not use the word trusted. Do not return a search-results page."
-        ),
-        prompt=(
-            f"Game: {game}\n"
-            f"Condition preference: {context.purchase_preference}\n"
-            f"ZIP code: {context.zip_code or 'not provided'}\n"
-            f"Local search allowed: {context.local_store_search_consent}\n"
-            f"Research:\n{research}\n\n"
-            "Return exactly three recommendations, one each for Online, Local, and Big box. "
-            "Online must be the lowest online price found. Big box must be the lower of "
-            "Target and Walmart when both prices were found. The summary must say which "
-            "displayed price is lowest. For the local store, the note must say to call "
-            "before visiting because stock pages go stale. If no ZIP code was allowed, "
-            "leave the local store, price, and link blank and say a ZIP code is needed."
-        ),
-        schema_name="purchase_report",
-        schema=PURCHASE_SCHEMA,
-    )
-    recommendations = order_options(result["recommendations"], game, context)
+    recommendations = options_from_research(research, game, context)
     return WorkerReport(
         worker="Purchase Advisor",
-        summary=with_lowest_price(result["summary"], recommendations),
+        summary=with_lowest_price("Compared the online, local, and big-box prices.", recommendations),
         recommendations=recommendations,
-        caveats=result["caveats"],
+        caveats=["Call the local store before visiting. Stock pages go stale."],
     )
 
 
@@ -121,20 +97,28 @@ async def research_prices(game: str, context: UserContext) -> str:
     if context.local_store_search_consent and context.zip_code:
         local = (
             f"Find one local board-game store within about 25 miles of ZIP {context.zip_code}. "
-            "Open its site and report the store name, the page URL, and the displayed price "
-            "and stock for this game when the page shows them."
+            "Open that store's product page for this exact game, not only its homepage. "
+            "Report the store name, the product-page URL, and the price printed on that page."
         )
     else:
         local = "Do not look up a local store. Say that a ZIP code and permission are needed."
     prompt = (
         f"Find current board-game prices for {game}. Condition preference: {context.purchase_preference}. "
-        "1. Find the cheapest online product page and report the store, displayed price, "
-        "stock text, and product-page URL. "
+        "1. Open the cheapest online product page. "
         f"2. {local} "
-        "3. Compare Target and Walmart and report the cheaper big-box product page, its "
-        "displayed price, stock text, and URL. "
-        "Use only prices printed on the pages. If a page does not show a price, say that. "
-        "Prefer a product page over a search page."
+        "3. Open the cheaper Target or Walmart product page. "
+        "Ignore add to cart, quantity, shipping cost, pickup, and delivery. "
+        "End with exactly these lines and nothing after them:\n"
+        "Online store: NAME\n"
+        "Online price: $0.00\n"
+        "Online url: https://product-page\n"
+        "Local store: NAME\n"
+        "Local price: $0.00\n"
+        "Local url: https://product-page\n"
+        "Big box store: NAME\n"
+        "Big box price: $0.00\n"
+        "Big box url: https://product-page\n"
+        "Use the product page, not a search page. If a price is not shown, write Local price: not shown."
     )
     try:
         response = await client().responses.create(
@@ -145,6 +129,137 @@ async def research_prices(game: str, context: UserContext) -> str:
     except Exception as error:
         return f"Price lookup failed ({error.__class__.__name__}). Do not invent prices or stock."
     return response.output_text or "No price research was returned. Do not invent prices or stock."
+
+
+ONLINE_HOSTS = (
+    "amazon.com", "ebay.com", "nobleknight.com", "boardlandia.com", "gamenerdz.com",
+    "miniaturemarket.com", "barnesandnoble.com", "coolstuffinc.com", "cardhaus.com",
+)
+BIG_BOX_HOSTS = ("target.com", "walmart.com", "bestbuy.com")
+STORE_NAMES = {
+    "amazon.com": "Amazon",
+    "ebay.com": "eBay",
+    "walmart.com": "Walmart",
+    "target.com": "Target",
+    "bestbuy.com": "Best Buy",
+    "nobleknight.com": "Noble Knight Games",
+    "boardlandia.com": "Boardlandia",
+    "gamenerdz.com": "Game Nerdz",
+    "miniaturemarket.com": "Miniature Market",
+    "barnesandnoble.com": "Barnes & Noble",
+}
+
+
+def options_from_research(text: str, game: str, context: UserContext) -> list[dict]:
+    by_channel = {channel: blank_option(channel, game) for channel in CHANNELS}
+    for channel_name, channel in (("online", "Online"), ("local", "Local"), ("big box", "Big box")):
+        by_channel[channel].update(clean_option({
+            "channel": channel,
+            "store_name": labeled_field(text, channel_name, "store"),
+            "price": labeled_field(text, channel_name, "price"),
+            "url": labeled_field(text, channel_name, "url"),
+        }, game))
+    used = {item["url"] for item in by_channel.values() if item["url"]}
+    for url in product_urls(text):
+        if url in used:
+            continue
+        channel = channel_for_url(url)
+        item = by_channel[channel]
+        window = text_before(text, url)
+        if not item["url"]:
+            item["url"] = url
+        if not item["price"]:
+            item["price"] = price_in(window)
+        if not item["store_name"]:
+            item["store_name"] = store_name_for(url)
+        used.add(url)
+    for item in by_channel.values():
+        if not item["price"]:
+            item["price"] = price_near_store(text, item["store_name"])
+        item["availability"] = ""
+        item["reason"] = ""
+    local = by_channel["Local"]
+    if context.local_store_search_consent and context.zip_code:
+        if local["store_name"]:
+            local["note"] = "Call before you visit. Stock pages go stale."
+    else:
+        by_channel["Local"] = clean_option({
+            "channel": "Local",
+            "store_name": "",
+            "price": "",
+            "url": "",
+            "note": "Add a ZIP code and allow nearby store search.",
+        }, game)
+    return [by_channel[channel] for channel in CHANNELS]
+
+
+def blank_option(channel: str, game: str) -> dict:
+    return clean_option({"channel": channel, "store_name": "", "price": "", "url": "", "note": ""}, game)
+
+
+def labeled_field(text: str, channel: str, name: str) -> str:
+    match = re.search(rf"(?im)^{channel} {name}:\s*(.+)$", text)
+    return match.group(1).strip() if match else ""
+
+
+def product_urls(text: str) -> list[str]:
+    urls = []
+    for raw in re.findall(r"https://[^\s)>\]]+", text):
+        url = raw.rstrip(".,;")
+        if acceptable_store_url(url) and not is_search_url(url) and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def channel_for_url(url: str) -> str:
+    host = hostname(url)
+    if any(host == domain or host.endswith(f".{domain}") for domain in BIG_BOX_HOSTS):
+        return "Big box"
+    if any(host == domain or host.endswith(f".{domain}") for domain in ONLINE_HOSTS):
+        return "Online"
+    return "Local"
+
+
+def store_name_for(url: str) -> str:
+    host = hostname(url)
+    for domain, name in STORE_NAMES.items():
+        if host == domain or host.endswith(f".{domain}"):
+            return name
+    return ""
+
+
+def hostname(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return ""
+
+
+def text_before(text: str, url: str) -> str:
+    index = text.find(url)
+    if index < 0:
+        return ""
+    return text[max(0, index - 240):index]
+
+
+def price_near_store(text: str, store_name: str) -> str:
+    if not store_name:
+        return ""
+    match = re.search(re.escape(store_name), text, re.I)
+    if not match:
+        return ""
+    start = max(0, match.start() - 80)
+    return price_in(text[start:match.end() + 180])
+
+
+def price_in(text: str) -> str:
+    for sentence in re.split(r"[\n.]", text):
+        if re.search(r"shipping|add to cart|pickup|delivery|quantity", sentence, re.I):
+            continue
+        found = shown_price(sentence)
+        if found:
+            return found
+    return ""
 
 
 def order_options(items: list[dict], game: str, context: UserContext) -> list[dict]:
@@ -180,7 +295,8 @@ def order_options(items: list[dict], game: str, context: UserContext) -> list[di
 
 
 def clean_option(item: dict, game: str) -> dict:
-    url = item.get("url", "").strip()
+    match = re.search(r"https://[^\s)>\]]+", item.get("url", ""))
+    url = match.group(0).rstrip(".,;") if match else ""
     if not acceptable_store_url(url) or is_search_url(url):
         url = ""
     return {
@@ -188,18 +304,23 @@ def clean_option(item: dict, game: str) -> dict:
         "channel": item.get("channel", ""),
         "store_name": item.get("store_name", "").strip(),
         "price": shown_price(item.get("price", "")),
-        "availability": item.get("availability", "").strip(),
+        "availability": "",
         "url": url,
-        "reason": item.get("reason", "").strip(),
+        "reason": "",
         "note": item.get("note", "").strip(),
     }
 
 
 def shown_price(value: str) -> str:
     text = value.strip()
-    if re.search(r"not shown|not listed|unknown|n/a|not verified", text, re.I):
+    if re.search(r"shipping|add to cart|pickup|delivery|quantity|not shown|not listed|unknown|n/a|not verified", text, re.I):
         return ""
-    return text
+    match = re.search(r"\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)", text)
+    if match:
+        return f"${float(match.group(1).replace(',', '')):.2f}"
+    if re.fullmatch(r"\d+\.\d{2}", text):
+        return f"${float(text):.2f}"
+    return ""
 
 
 def acceptable_store_url(url: str) -> bool:
@@ -230,7 +351,7 @@ def is_search_url(url: str) -> bool:
         return True
     if "target." in host and (path == "/s" or path.startswith("/s")):
         return True
-    return "searchterm=" in query or "_nkw=" in query
+    return path in {"/s", "/search"} and ("searchterm=" in query or "_nkw=" in query)
 
 
 def with_lowest_price(summary: str, recommendations: list[dict]) -> str:
