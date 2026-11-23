@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class UserContext(BaseModel):
     favorites: str = ""
     games_to_assess: str = ""
+    corrected_titles: str = ""
     typical_player_count: int = Field(default=2, ge=1, le=20)
     shelf_notes: str = ""
     expansions_in_use: str = ""
@@ -15,6 +16,7 @@ class UserContext(BaseModel):
     purchase_preference: str = "either"
     purchase_query: str = ""
     purchase_search_requested: bool = False
+    skip_player_count: bool = False
     zip_code: str = ""
     local_store_search_consent: bool = False
 

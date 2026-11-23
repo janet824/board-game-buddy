@@ -50,6 +50,8 @@
     .drop { background:linear-gradient(145deg,#e5f0df,#d2e5d2); border:1px dashed #8eaf91; border-radius:14px; padding:18px; }
     .photo-preview { display:none; width:100%; max-height:180px; object-fit:cover; margin-top:12px; border-radius:12px; border:3px solid white; box-shadow:0 3px 10px #28452a33; }
     .photo-preview.visible { display:block; }
+    #correction-form { margin:18px 0; padding-top:8px; border-top:1px solid var(--line); }
+    #correction-form input[name="corrected_title"] { margin-top:8px; }
     .result { margin-top:22px; }
     .result:focus { outline:3px solid #e5b95e; outline-offset:4px; }
     .report-ready { display:inline-block; margin-bottom:8px; padding:6px 10px; border-radius:999px; background:#e8f1e5; color:#367245; font-size:.82rem; font-weight:900; }
@@ -57,7 +59,7 @@
     .worker { border:1px solid var(--line); border-left:7px solid var(--coral); border-radius:14px; padding:14px 16px; margin-top:18px; background:#fffaf0; }
     .purchase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:12px; }
     .purchase-card { border:1px solid #d8e1d6; border-radius:14px; padding:14px; background:#f8fbf5; }
-    .purchase-card a { display:inline-block; margin:8px 8px 0 0; padding:8px 12px; border-radius:10px; background:var(--felt); color:white; font-weight:800; text-decoration:none; }
+    .purchase-card a, .buy-recommendation { display:inline-block; width:auto; min-height:40px; margin:8px 8px 0 0; padding:8px 12px; border-radius:10px; background:var(--felt); color:white; font-weight:800; text-decoration:none; }
     .purchase-card h4 { margin:0 0 8px; }
     .purchase-meta { color:var(--muted); font-size:.92rem; }
     .agent-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:24px 0 18px; }
@@ -120,9 +122,9 @@
         <div class="card-heading"><span class="step-token">1</span><div><h2>Show me your shelf</h2><p class="intro">Give your buddy a snapshot of your collection.</p></div></div>
         <div class="drop">
           <label for="photo">Shelf photo <small>(optional)</small></label>
-          <input id="photo" name="photo" type="file" accept="image/*" capture="environment">
+          <input id="photo" name="photo" type="file" accept="image/*">
           <img id="photo-preview" class="photo-preview" alt="Preview of uploaded shelf photo">
-          <small>Skip the photo if you want recommendations based only on your favorites and player count.</small>
+          <small>Skip the photo if you want recommendations based only on your favorite games.</small>
           <label for="shelf-notes">What do the shelf areas mean? <small>(optional)</small></label>
           <textarea id="shelf-notes" name="shelf_notes" placeholder="Example: top shelf = our favorites; second row = unplayed games"></textarea>
           <small>Leave this blank if your games are simply alphabetical or organized another way.</small>
@@ -136,9 +138,6 @@
         <div class="card-heading"><span class="step-token">2</span><div><h2>Tell me what you like</h2><p class="intro">The more you share, the more personal the recommendations.</p></div></div>
         <label for="favorites">Favorite games</label>
         <textarea id="favorites" name="favorites" placeholder="Example: Brass: Birmingham, The Gallerist, and games with deep strategy"></textarea>
-        <label for="games-to-assess">Games to evaluate <small>(optional if you skip the photo)</small></label>
-        <textarea id="games-to-assess" name="games_to_assess" placeholder="Example: On Mars, Kanban EV, Gloomhaven"></textarea>
-        <small>Enter games here when you want player-count or physical-versus-digital guidance without uploading a shelf photo.</small>
         <label for="player-count">Typical number of players</label>
         <input id="player-count" name="player_count" type="number" min="1" max="20" value="2">
         <button id="submit" type="submit">Meet my Board Game Buddy</button>
@@ -170,7 +169,7 @@
     <div class="card-heading"><span class="step-token">3</span><div><h2>Ask a live rules question</h2><p class="intro">Photograph the relevant rulebook page, reference card, or player aid while you play.</p></div></div>
     <form id="rules-form">
       <label for="rulebook-photo">Rulebook or card photo <small>(optional)</small></label>
-      <input id="rulebook-photo" name="rulebook_photo" type="file" accept="image/*" capture="environment">
+      <input id="rulebook-photo" name="rulebook_photo" type="file" accept="image/*">
       <small>Upload a page for source-based help, or skip it for a cautious answer based on your question.</small>
       <label for="question">What is confusing?</label>
       <textarea id="question" name="question" placeholder="Example: I am Electra playing Iron Maiden as a guest performer. Can I break normal placement rules?" required></textarea>
@@ -251,10 +250,13 @@ form.addEventListener('submit', async (event) => {
   result.hidden = false;
   document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
   document.querySelector('[data-agent="shelf"]')?.classList.add('thinking');
-  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and trusted places to buy the game you typed…' : 'Reading the shelf and comparing your preferences…'}</p>`;
+  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and trusted places to buy the game you typed…' : 'Reading the shelf and comparing your preferences…'}</p><p>This can take a minute. Keep this page open and the result will appear when it is ready.</p>`;
   try {
     const purchaseTitle = document.querySelector('#purchase-game').value.trim();
-    const data = await requestJson('/api/analyze', { method:'POST', body:new FormData(form) });
+    const data = await requestJob('/api/analyze', { method:'POST', body:new FormData(form) }, seconds => {
+      const note = result.querySelector('p:last-child');
+      if (note) note.textContent = `Still working (${seconds}s). Keep this page open and the result will appear when it is ready.`;
+    });
     if (purchaseOnly) {
       const reports = data.worker_reports || [];
       result.innerHTML = `
@@ -273,25 +275,13 @@ form.addEventListener('submit', async (event) => {
     await pause(180);
     markAgent('recommend');
     document.querySelector('[data-agent="recommend"]')?.classList.remove('thinking');
-    document.querySelector('[data-agent="players"]')?.classList.add('thinking');
     playSound('dice');
-    await pause(180);
-    markAgent('players');
-    document.querySelector('[data-agent="players"]')?.classList.remove('thinking');
-    playSound('cubes');
-    const games = data.shelf_report.games || [];
-    const reports = data.worker_reports || [];
-    const collectionMessage = games.length
-      ? games.map(g => `<span class="pill">${escapeHtml(g.title)} · ${escapeHtml(g.shelf_group)}</span>`).join('')
-      : '<p>No shelf photo was uploaded. Any games entered in “Games to evaluate” were still sent to the Player Count Advisor.</p>';
-    result.innerHTML = `
-      <div class="report-ready">✓ Your report is ready</div>
-      <h2>Your Board Game Buddy report</h2>
-      <p>${escapeHtml(data.answer)}</p>
-      <h3>${games.length ? 'Games detected in the shelf photo' : 'Typed games used for analysis'}</h3>
-      <div>${collectionMessage}</div>
-      ${reports.map(renderWorker).join('')}
-      <p><small>Some game names may be hard for us to read. Please check them before we use your shelf for recommendations.</small></p>`;
+    const savedContext = {
+      favorites: document.querySelector('#favorites').value,
+      playerCount: document.querySelector('#player-count').value,
+      shelfNotes: document.querySelector('#shelf-notes').value,
+    };
+    showCollectionReport(data, savedContext);
     clearEntryForm(form);
     revealResult(result);
   } catch (error) {
@@ -309,9 +299,12 @@ rulesForm.addEventListener('submit', async (event) => {
   rulesButton.disabled = true;
   rulesButton.textContent = 'Checking the rules…';
   rulesResult.hidden = false;
-  rulesResult.innerHTML = '<p>Reading the page and separating official rules from interpretations…</p>';
+  rulesResult.innerHTML = '<p>Reading the page and separating official rules from interpretations…</p><p>This can take a minute. Keep this page open and the answer will appear when it is ready.</p>';
   try {
-    const data = await requestJson('/api/rules', { method:'POST', body:new FormData(rulesForm) });
+    const data = await requestJob('/api/rules', { method:'POST', body:new FormData(rulesForm) }, seconds => {
+      const note = rulesResult.querySelector('p:last-child');
+      if (note) note.textContent = `Still working (${seconds}s). Keep this page open and the answer will appear when it is ready.`;
+    });
     rulesResult.innerHTML = `
       <div class="report-ready">✓ Your rules answer is ready</div>
       <h3>Ruling</h3>
@@ -332,6 +325,57 @@ rulesForm.addEventListener('submit', async (event) => {
     rulesButton.textContent = 'Ask the Rules Helper';
   }
 });
+result.addEventListener('submit', async (event) => {
+  if (event.target.id !== 'correction-form') return;
+  event.preventDefault();
+  const correction = event.target;
+  const submit = correction.querySelector('button');
+  submit.disabled = true;
+  submit.textContent = 'Updating the names…';
+  result.insertAdjacentHTML('afterbegin', '<p id="correction-wait">Updating your game names. Keep this page open.</p>');
+  try {
+    const data = await requestJob('/api/analyze', {method:'POST', body:new FormData(correction)}, seconds => {
+      const note = document.querySelector('#correction-wait');
+      if (note) note.textContent = `Still updating (${seconds}s). Keep this page open.`;
+    });
+    showCollectionReport(data, {
+      favorites: correction.favorites.value,
+      playerCount: correction.player_count.value,
+      gamesToAssess: '',
+      shelfNotes: correction.shelf_notes.value,
+    });
+    revealResult(result);
+  } catch (error) {
+    result.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+  }
+});
+function showCollectionReport(data, saved) {
+  const games = data.shelf_report?.games || [];
+  const reports = data.worker_reports || [];
+  const titles = games.map(game => game.title);
+  const collectionMessage = games.length
+    ? games.map(game => `<span class="pill">${escapeHtml(game.title)} · ${escapeHtml(game.shelf_group)}</span>`).join('')
+    : '<p>No shelf photo was uploaded. Recommendations used the favorite games you typed.</p>';
+  result.innerHTML = `
+    <div class="report-ready">✓ Your report is ready</div>
+    <h2>Your Board Game Buddy report</h2>
+    <p>${escapeHtml(data.answer)}</p>
+    <h3>${games.some(game => game.shelf_group === 'corrected') ? 'Names you corrected' : games.length ? 'Games detected in the shelf photo' : 'Typed games used for analysis'}</h3>
+    <div>${collectionMessage}</div>
+    <form id="correction-form">
+      <h3>Fix a wrong name</h3>
+      <p>Change a name, erase one that is not a game, or add a game we missed.</p>
+      ${(titles.length ? titles : ['']).map(title => `<input name="corrected_title" value="${escapeHtml(title)}" aria-label="Game name">`).join('')}
+      <input name="corrected_title" placeholder="Add a missing game" aria-label="Add a missing game">
+      <input type="hidden" name="favorites" value="${escapeHtml(saved.favorites || '')}">
+      <input type="hidden" name="player_count" value="${escapeHtml(saved.playerCount || '2')}">
+      <input type="hidden" name="games_to_assess" value="${escapeHtml(saved.gamesToAssess || '')}">
+      <input type="hidden" name="shelf_notes" value="${escapeHtml(saved.shelfNotes || '')}">
+      <button type="submit">Update with my corrections</button>
+    </form>
+    ${reports.map(renderWorker).join('')}
+    <p><small>Some game names may be hard for us to read. Please check them before we use your shelf for recommendations.</small></p>`;
+}
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 }
@@ -343,10 +387,57 @@ function clearEntryForm(target) {
     purchaseSearch.value = 'false';
   }
 }
+result.addEventListener('click', async (event) => {
+  const button = event.target.closest('.buy-recommendation');
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  button.textContent = 'Finding stores…';
+  const body = new FormData();
+  body.set('purchase_game', button.dataset.title || '');
+  body.set('purchase_search', 'true');
+  body.set('skip_player_count', 'true');
+  body.set('player_count', '2');
+  body.set('purchase_preference', 'either');
+  try {
+    const data = await requestJob('/api/analyze', {method:'POST', body}, seconds => {
+      button.textContent = `Finding stores… ${seconds}s`;
+    });
+    const purchase = (data.worker_reports || []).find(report => report.worker === 'Purchase Advisor');
+    button.insertAdjacentHTML('afterend', purchase ? renderWorker(purchase) : '<p>No purchase options were returned.</p>');
+    button.textContent = 'Stores shown below';
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = 'See where to buy';
+    button.insertAdjacentHTML('afterend', `<p class="error">${escapeHtml(error.message)}</p>`);
+  }
+});
 function revealResult(element) {
   element.hidden = false;
   element.scrollIntoView({behavior:'smooth', block:'start'});
   element.focus({preventScroll:true});
+}
+async function requestJob(url, options, onWait) {
+  if (demoMode) {
+    if (url.includes('/rules')) return demoRulesResponse();
+    if (options?.body instanceof FormData && options.body.get('purchase_search') === 'true') return demoPurchaseResponse(options.body.get('purchase_game'));
+    return demoAnalyzeResponse(options?.body);
+  }
+  const started = await requestJson(url, options);
+  if (!started.job_id) return started;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 8 * 60 * 1000) {
+    onWait?.(Math.round((Date.now() - startedAt) / 1000));
+    await pause(3000);
+    try {
+      const job = await requestJson(`/api/jobs/${started.job_id}`);
+      if (job.status === 'done') return job.result;
+      if (job.status === 'error') throw new Error(job.detail || 'The analysis failed.');
+    } catch (error) {
+      const message = String(error.message || '');
+      if (/analysis failed|no longer available|Player count|rules question|uploaded photo|request failed \(4/.test(message)) throw error;
+    }
+  }
+  throw new Error('This is taking longer than expected. Please try again.');
 }
 async function requestJson(url, options) {
   if (demoMode) return url.includes('/rules') ? demoRulesResponse() : demoAnalyzeResponse(options?.body);
@@ -368,31 +459,43 @@ function demoAnalyzeResponse(formData) {
   const gamesToAssess = formData instanceof FormData ? (formData.get('games_to_assess') || '').toString().trim() : '';
   const purchaseGame = formData instanceof FormData ? (formData.get('purchase_game') || '').toString().trim() : '';
   const hasPhoto = formData instanceof FormData && formData.get('photo')?.name;
+  const corrected = formData instanceof FormData ? formData.getAll('corrected_title').map(title => title.trim()).filter(Boolean) : [];
   const favoriteText = favorites || 'the example favorites';
   const assessedTitle = gamesToAssess.split(/[,;\n]/).map(title => title.trim()).find(Boolean) || 'Wyrmspan';
   const purchaseTitle = purchaseGame || 'Sample purchase option';
   return {
     answer: `${hasPhoto ? 'This browser-only preview received a shelf photo and ' : 'No shelf photo was provided; this browser-only preview '}received these favorites: ${favoriteText}. It prepared example recommendations for demonstration. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.`,
     shelf_report: {
-      games: [
+      games: corrected.length ? corrected.map(title => ({title, shelf_group:"corrected"})) : [
         {title:"Wyrmspan", shelf_group:"favorite"},
         {title:"Finspan", shelf_group:"unplayed"},
         {title:"Wingspan", shelf_group:"favorite"}
       ]
     },
     worker_reports: [
-      {worker:"Game Recommender", summary:"Sample collaborative-filtering candidates based on the example favorites.", recommendations:[
-        {title:"Apiary", reason:"A strategic engine-building game with a satisfying progression system."},
-        {title:"Earth", reason:"A tableau-building game with an engaging nature theme and flexible turns."}
+      {worker:"Games for you", summary:"Five sample games based on the example favorites.", recommendations:[
+        {title:"Apiary", reason:"A strategic game with a satisfying progression system."},
+        {title:"Earth", reason:"A nature-themed game with flexible turns."},
+        {title:"Ark Nova", reason:"A large strategy game with a strong collection feeling."},
+        {title:"Barrage", reason:"A planning game with interesting timing choices."},
+        {title:"Brass: Birmingham", reason:"A classic economic game for fans of tough decisions."}
       ]},
-      {worker:"Player Count Advisor", summary:"Sample player-count guidance for the example collection.", recommendations:[
-        {title:assessedTitle, publisher_range:"1–5", official_recommendation:"See the official rulebook", optimal_player_count:"2–3", reason:"Lower counts keep the turns focused.", setup_burden:"moderate", play_mode:"physical"}
-      ]},
-      {worker:"Purchase Advisor", summary:"Sample purchase comparison. Live prices and stock require the full deployment.", recommendations:[
-        {title:purchaseTitle, reason:"Demo card only; live purchase searching requires the full deployment.", store_name:"Example retailer", price:"Not live", availability:"Demo data"}
+      {worker:"New games", summary:"Five sample newer games that do not repeat the first list.", recommendations:[
+        {title:"SETI", reason:"A newer strategy game with a science theme."},
+        {title:"The Lord of the Rings: Duel for Middle-earth", reason:"A compact newer two-player game."},
+        {title:"Bomb Busters", reason:"A recent cooperative deduction game."},
+        {title:"Flip 7", reason:"A fast recent card game."},
+        {title:"Sky Team", reason:"A recent cooperative game with a short play time."}
       ]}
     ],
-    agents_used:["Board Game Buddy","Shelf Interpreter","Game Recommender","Player Count Advisor"]
+    agents_used:["Board Game Buddy","Shelf Interpreter","Games for you","New games"]
+  };
+}
+function demoPurchaseResponse(title) {
+  return {
+    answer:`Sample places to look for ${title || 'this game'}.`,
+    shelf_report:{games:[]},
+    worker_reports:[{worker:"Purchase Advisor", summary:"Demo store search only.", recommendations:[{title:title || 'Sample game', reason:"These buttons open major retailers in the full app.", retailer_links:[{store:"Amazon", url:"https://www.amazon.com"},{store:"eBay", url:"https://www.ebay.com"}]}]}]
   };
 }
 function demoRulesResponse() {
@@ -410,7 +513,8 @@ function renderWorker(report) {
     if (report.worker === 'Player Count Advisor') {
       return `<div class="worker"><h3>👥 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong><br>Publisher range: ${escapeHtml(x.publisher_range)} · Official guidance: ${escapeHtml(x.official_recommendation)} · Community-reported best: <strong>${escapeHtml(x.optimal_player_count)}</strong><br>${escapeHtml(x.reason)}<br><small>Setup: ${escapeHtml(x.setup_burden)} · Best mode: ${escapeHtml(x.play_mode)}${x.digital_options ? ` · Digital options: ${escapeHtml(x.digital_options)}` : ''}</small></p>`).join('')}</div>`;
     }
-    return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}</p>`).join('')}</div>`;
+    const buyable = report.worker === 'Games for you' || report.worker === 'New games';
+    return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}${buyable ? `<br><button type="button" class="buy-recommendation" data-title="${escapeHtml(x.title)}">See where to buy</button>` : ''}</p>`).join('')}</div>`;
   }
   return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p>${purchaseFacts(x.store_name, x.price, x.availability)}<p>${retailerLinks(x)}</p>${knownDetail(x.local_search_note) ? `<br><small>${escapeHtml(knownDetail(x.local_search_note))}</small>` : ''}</article>`).join('')}</div></div>`;
 }

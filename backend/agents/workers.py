@@ -124,7 +124,28 @@ async def interpret_shelf(image_data_url: str, context: UserContext) -> ShelfRep
     return ShelfReport.model_validate(result)
 
 
-async def recommend_games(shelf: ShelfReport, context: UserContext) -> WorkerReport:
+PAIR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "overall_summary": {"type": "string"},
+        "overall": REPORT_SCHEMA["properties"]["recommendations"],
+        "new_summary": {"type": "string"},
+        "new_releases": REPORT_SCHEMA["properties"]["recommendations"],
+    },
+    "required": ["overall_summary", "overall", "new_summary", "new_releases"],
+    "additionalProperties": False,
+}
+
+
+def _clean_title(title: str) -> str:
+    return title.removesuffix(" — candidate").removesuffix(" - candidate").strip()
+
+
+def _key(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", title.lower())
+
+
+async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[WorkerReport]:
     titles = ", ".join(game.title for game in shelf.games)
     result = await ask_json(
         system=(
@@ -132,9 +153,8 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> WorkerRep
             "collection, favorites, and practical player count. Use collaborative filtering "
             "as the default: reason from games that players with similar collections and "
             "favorites also tend to enjoy, rather than matching only mechanics or themes. "
-            "This is a cold-start profile, so label recommendations as candidates until "
-            "the user rates them. Do not claim live prices or current availability. "
-            "Explain the match in plain language."
+            "Do not claim live prices or current availability. "
+            "Explain the match in plain language. Never add the word candidate to a title."
         ),
         prompt=(
             f"Owned or photographed games: {titles or 'unknown'}. "
@@ -143,16 +163,37 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> WorkerRep
             f"Purchase preference: {context.purchase_preference}. "
             f"Local-store search consent: {context.local_store_search_consent}; "
             f"ZIP code supplied: {'yes' if context.zip_code else 'no'}. "
-            "Do not recommend any game already in the owned collection. Suggest up to five "
-            "games the user may not own. For each one, "
-            "briefly identify the collaborative-filtering signal or explain in plain "
-            "English that this is an early recommendation based on limited profile data. "
-            "Do not append labels such as 'candidate' to game titles."
+            "Return exactly five overall recommendations and exactly five different new games. "
+            "Exclude every game the user already owns or named as a favorite. The new games "
+            "must have been released within the past 12 months or be an active Kickstarter or "
+            "Gamefound campaign, and none of them may repeat an overall recommendation. "
+            "Explain each match in plain English. Do not append labels such as 'candidate' to titles."
         ),
-        schema_name="recommendation_report",
-        schema=REPORT_SCHEMA,
+        schema_name="recommendation_pair",
+        schema=PAIR_SCHEMA,
     )
-    return WorkerReport(worker="Game Recommender", **result)
+    owned = {_key(game.title) for game in shelf.games}
+    owned.update(_key(part) for part in re.split(r"[,;\n]", context.favorites) if part.strip())
+    overall = []
+    for item in result["overall"]:
+        item["title"] = _clean_title(item.get("title", ""))
+        if item["title"] and _key(item["title"]) not in owned and _key(item["title"]) not in {_key(x["title"]) for x in overall}:
+            overall.append(item)
+        if len(overall) == 5:
+            break
+    chosen = owned | {_key(item["title"]) for item in overall}
+    new_releases = []
+    for item in result["new_releases"]:
+        item["title"] = _clean_title(item.get("title", ""))
+        if item["title"] and _key(item["title"]) not in chosen:
+            new_releases.append(item)
+            chosen.add(_key(item["title"]))
+        if len(new_releases) == 5:
+            break
+    return [
+        WorkerReport(worker="Games for you", summary=result["overall_summary"], recommendations=overall, caveats=[]),
+        WorkerReport(worker="New games", summary=result["new_summary"], recommendations=new_releases, caveats=[]),
+    ]
 
 
 async def assess_player_count(
@@ -210,13 +251,12 @@ async def run_workers(shelf: ShelfReport, context: UserContext) -> list[WorkerRe
                 worker="Purchase Advisor",
                 summary="Type the game you want to buy, then search again.",
             )]
+        if context.skip_player_count:
+            return [await advise_purchases(titles=[query], owned_titles=[], context=context)]
         player_context = context.model_copy(update={"games_to_assess": query})
         player_report, purchase_report = await asyncio.gather(
             assess_player_count(ShelfReport(), player_context, purchase_game=query),
             advise_purchases(titles=[query], owned_titles=[], context=context),
         )
         return [player_report, purchase_report]
-    return list(await asyncio.gather(
-        recommend_games(shelf, context),
-        assess_player_count(shelf, context),
-    ))
+    return await recommend_games(shelf, context)
