@@ -52,6 +52,10 @@
     .photo-preview.visible { display:block; }
     #correction-form { margin:18px 0; padding-top:8px; border-top:1px solid var(--line); }
     #correction-form input[name="corrected_title"] { margin-top:8px; }
+    .correction-row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; }
+    .favorite-choice { display:flex; align-items:center; gap:6px; margin:8px 0 0; font-weight:700; white-space:nowrap; }
+    .favorite-choice input, .choice-row input { width:auto; min-height:auto; }
+    .choice-row { display:flex; align-items:center; gap:8px; margin:8px 0; font-weight:700; }
     .result { margin-top:22px; }
     .result:focus { outline:3px solid #e5b95e; outline-offset:4px; }
     .report-ready { display:inline-block; margin-bottom:8px; padding:6px 10px; border-radius:999px; background:#e8f1e5; color:#367245; font-size:.82rem; font-weight:900; }
@@ -128,10 +132,6 @@
           <label for="shelf-notes">What do the shelf areas mean? <small>(optional)</small></label>
           <textarea id="shelf-notes" name="shelf_notes" placeholder="Example: top shelf = our favorites; second row = unplayed games"></textarea>
           <small>Leave this blank if your games are simply alphabetical or organized another way.</small>
-          <label for="expansions">Expansions included?</label>
-          <textarea id="expansions" name="expansions" placeholder="Example: Dark Alley, Dawn of Technology, none"></textarea>
-          <label for="variants">Variants or house rules?</label>
-          <textarea id="variants" name="variants" placeholder="Example: We use a house rule that changes how scoring works"></textarea>
         </div>
       </section>
       <section class="card" id="recommendation-card">
@@ -150,9 +150,10 @@
           <option value="new">New only</option>
           <option value="used">Used is preferred</option>
         </select>
-        <label for="purchase-game">Specific game to buy <small>(optional)</small></label>
+        <div id="recommended-choices" hidden></div>
+        <label for="purchase-game">Specific game to buy</label>
         <input id="purchase-game" name="purchase_game" placeholder="Example: Wyrmspan, Finspan, or Azul">
-        <small>If the game has editions or expansions, Board Game Buddy will ask which one you mean before searching.</small>
+        <small>Choose one recommended game or type one game. Only one game is searched at a time.</small>
         <label for="zip-code">ZIP code <small>(optional)</small></label>
         <input id="zip-code" name="zip_code" inputmode="numeric" autocomplete="postal-code" placeholder="For nearby store searches">
         <label style="font-weight:400;">
@@ -207,12 +208,12 @@ function showView(viewId) {
 document.querySelectorAll('[data-show-view]').forEach(control => {
   control.addEventListener('click', () => showView(control.dataset.showView));
 });
-document.querySelector('#buy-button').addEventListener('click', () => {
-  showView('collection-view');
-  document.querySelector('#collection-view').classList.add('purchase-mode');
-  const purchaseField = document.querySelector('#purchase-game');
-  purchaseField.closest('.card').scrollIntoView({behavior:'smooth', block:'center'});
-  purchaseField.focus();
+document.querySelector('#buy-button').addEventListener('click', () => openBuyPage(''));
+document.querySelector('#recommended-choices').addEventListener('change', (event) => {
+  if (event.target.name === 'recommended_choice') document.querySelector('#purchase-game').value = event.target.value;
+});
+document.querySelector('#purchase-game').addEventListener('input', () => {
+  document.querySelectorAll('input[name="recommended_choice"]').forEach(choice => { choice.checked = false; });
 });
 purchaseSubmit.addEventListener('click', () => { purchaseSearch.value = 'true'; });
 const demoMode = location.hostname.endsWith('.github.io') || new URLSearchParams(location.search).has('demo');
@@ -325,6 +326,15 @@ rulesForm.addEventListener('submit', async (event) => {
     rulesButton.textContent = 'Ask the Rules Helper';
   }
 });
+result.addEventListener('input', (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || input.name !== 'corrected_title') return;
+  const correction = input.closest('#correction-form');
+  if (!correction) return;
+  const titles = [...correction.querySelectorAll('input[name="corrected_title"]')];
+  if (input !== titles.at(-1) || !input.value.trim()) return;
+  input.closest('.correction-row').insertAdjacentHTML('afterend', correctionRow({title:'', shelf_group:''}, '', titles.length, true));
+});
 result.addEventListener('submit', async (event) => {
   if (event.target.id !== 'correction-form') return;
   event.preventDefault();
@@ -352,29 +362,34 @@ result.addEventListener('submit', async (event) => {
 function showCollectionReport(data, saved) {
   const games = data.shelf_report?.games || [];
   const reports = data.worker_reports || [];
-  const titles = games.map(game => game.title);
-  const collectionMessage = games.length
-    ? games.map(game => `<span class="pill">${escapeHtml(game.title)} · ${escapeHtml(game.shelf_group)}</span>`).join('')
-    : '<p>No shelf photo was uploaded. Recommendations used the favorite games you typed.</p>';
+  const rows = games;
   result.innerHTML = `
     <div class="report-ready">✓ Your report is ready</div>
     <h2>Your Board Game Buddy report</h2>
     <p>${escapeHtml(data.answer)}</p>
-    <h3>${games.some(game => game.shelf_group === 'corrected') ? 'Names you corrected' : games.length ? 'Games detected in the shelf photo' : 'Typed games used for analysis'}</h3>
-    <div>${collectionMessage}</div>
+    ${games.length ? '' : '<p>No shelf photo was uploaded. Recommendations used the favorite games you typed.</p>'}
     <form id="correction-form">
       <h3>Fix a wrong name</h3>
-      <p>Change a name, erase one that is not a game, or add a game we missed.</p>
-      ${(titles.length ? titles : ['']).map(title => `<input name="corrected_title" value="${escapeHtml(title)}" aria-label="Game name">`).join('')}
-      <input name="corrected_title" placeholder="Add a missing game" aria-label="Add a missing game">
+      <p>Change a name, check Favorite if you love that game, erase one that is not a game, or add a game we missed.</p>
+      ${rows.map((game, index) => correctionRow(game, saved.favorites || '', index)).join('')}
+      ${correctionRow({title:'', shelf_group:''}, '', rows.length, true)}
       <input type="hidden" name="favorites" value="${escapeHtml(saved.favorites || '')}">
       <input type="hidden" name="player_count" value="${escapeHtml(saved.playerCount || '2')}">
       <input type="hidden" name="games_to_assess" value="${escapeHtml(saved.gamesToAssess || '')}">
       <input type="hidden" name="shelf_notes" value="${escapeHtml(saved.shelfNotes || '')}">
       <button type="submit">Update with my corrections</button>
     </form>
+    ${rememberRecommendations(reports)}
     ${reports.map(renderWorker).join('')}
     <p><small>Some game names may be hard for us to read. Please check them before we use your shelf for recommendations.</small></p>`;
+}
+function correctionRow(game, favorites, index, blank = false) {
+  const title = blank ? '' : game.title;
+  const checked = !blank && (game.shelf_group === 'favorite' || favoriteNames(favorites).includes(title.toLowerCase()));
+  return `<div class="correction-row"><input name="corrected_title" value="${escapeHtml(title)}" placeholder="${blank ? 'Add a missing game' : ''}" aria-label="Game name"><label class="favorite-choice"><input type="checkbox" name="corrected_favorite" value="${index}" ${checked ? 'checked' : ''}> Favorite</label></div>`;
+}
+function favoriteNames(favorites) {
+  return String(favorites || '').split(/[,;\n]/).map(name => name.trim().toLowerCase()).filter(Boolean);
 }
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
@@ -387,30 +402,37 @@ function clearEntryForm(target) {
     purchaseSearch.value = 'false';
   }
 }
-result.addEventListener('click', async (event) => {
+result.addEventListener('click', (event) => {
   const button = event.target.closest('.buy-recommendation');
-  if (!button || button.disabled) return;
-  button.disabled = true;
-  button.textContent = 'Finding stores…';
-  const body = new FormData();
-  body.set('purchase_game', button.dataset.title || '');
-  body.set('purchase_search', 'true');
-  body.set('skip_player_count', 'true');
-  body.set('player_count', '2');
-  body.set('purchase_preference', 'either');
-  try {
-    const data = await requestJob('/api/analyze', {method:'POST', body}, seconds => {
-      button.textContent = `Finding stores… ${seconds}s`;
-    });
-    const purchase = (data.worker_reports || []).find(report => report.worker === 'Purchase Advisor');
-    button.insertAdjacentHTML('afterend', purchase ? renderWorker(purchase) : '<p>No purchase options were returned.</p>');
-    button.textContent = 'Stores shown below';
-  } catch (error) {
-    button.disabled = false;
-    button.textContent = 'See where to buy';
-    button.insertAdjacentHTML('afterend', `<p class="error">${escapeHtml(error.message)}</p>`);
-  }
+  if (!button) return;
+  openBuyPage(button.dataset.title || '');
 });
+function rememberRecommendations(reports) {
+  recommendedGames = (reports || [])
+    .filter(report => report.worker === 'Games for you' || report.worker === 'New games')
+    .flatMap(report => (report.recommendations || []).map(item => item.title).filter(Boolean))
+    .filter((title, index, all) => all.findIndex(other => other.toLowerCase() === title.toLowerCase()) === index)
+    .slice(0, 10);
+  return '';
+}
+function openBuyPage(selectedTitle) {
+  showView('collection-view');
+  document.querySelector('#collection-view').classList.add('purchase-mode');
+  result.hidden = true;
+  const choices = document.querySelector('#recommended-choices');
+  if (!recommendedGames.length) {
+    choices.hidden = true;
+    choices.innerHTML = '';
+  } else {
+    choices.hidden = false;
+    choices.innerHTML = `<p><strong>Choose one recommended game</strong></p>${recommendedGames.map(title => `<label class="choice-row"><input type="radio" name="recommended_choice" value="${escapeHtml(title)}" ${title === selectedTitle ? 'checked' : ''}>${escapeHtml(title)}</label>`).join('')}`;
+  }
+  const purchaseField = document.querySelector('#purchase-game');
+  if (selectedTitle) purchaseField.value = selectedTitle;
+  purchaseField.closest('.card').scrollIntoView({behavior:'smooth', block:'start'});
+  if (!selectedTitle) purchaseField.focus();
+}
+let recommendedGames = [];
 function revealResult(element) {
   element.hidden = false;
   element.scrollIntoView({behavior:'smooth', block:'start'});

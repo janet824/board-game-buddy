@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from backend.agents.workers import interpret_shelf, run_workers
 from backend.models import BoardGame, BuddyRequest, BuddyResponse, ShelfReport, WorkerReport
 
@@ -29,20 +31,33 @@ def compose_answer(shelf: ShelfReport, reports: list[WorkerReport], has_photo: b
         else "You can add a shelf photo later if you want the collection interpreted automatically."
     )
     if corrected:
-        opening = f"I used the names you corrected: {detected}. "
+        opening = "I used the names and favorites you corrected. "
     elif has_photo:
-        opening = f"I found {len(visible)} possible game(s) in the photo: {detected}. "
+        opening = f"I found {len(visible)} possible game(s) in the photo. "
     else:
-        opening = f"I used your typed preferences without a shelf photo: {detected}. "
+        opening = "I used your typed favorites without a shelf photo. "
     return opening + f"Here are five games to explore: {suggestions}. Five newer games are listed separately, and none of these are games you already own. " + review_note
 
 
 async def run_buddy(request: BuddyRequest) -> BuddyResponse:
     corrected = [title.strip() for title in request.context.corrected_titles.splitlines() if title.strip()]
     if corrected:
+        favorite_keys = {
+            re.sub(r"[^a-z0-9]+", "", part.lower())
+            for part in re.split(r"[,;\n]", request.context.favorites)
+            if part.strip()
+        }
         shelf = ShelfReport(
-            games=[BoardGame(title=title, confidence="high", shelf_group="corrected", evidence="Corrected by the user") for title in corrected],
-            observations=["The user corrected the game names."],
+            games=[
+                BoardGame(
+                    title=title,
+                    confidence="high",
+                    shelf_group="favorite" if re.sub(r"[^a-z0-9]+", "", title.lower()) in favorite_keys else "owned",
+                    evidence="Corrected by the user",
+                )
+                for title in corrected
+            ],
+            observations=["The user corrected the game names and favorites."],
         )
     elif request.context.purchase_search_requested or not request.image_data_url:
         shelf = ShelfReport(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import mimetypes
+import re
 import uuid
 from pathlib import Path
 
@@ -56,6 +57,7 @@ async def analyze(
     favorites: str = Form(default=""),
     games_to_assess: str = Form(default=""),
     corrected_title: list[str] = Form(default=[]),
+    corrected_favorite: list[str] = Form(default=[]),
     player_count: int = Form(default=2),
     shelf_notes: str = Form(default=""),
     expansions: str = Form(default=""),
@@ -69,6 +71,24 @@ async def analyze(
 ) -> dict:
     if player_count < 1 or player_count > 20:
         raise HTTPException(status_code=400, detail="Player count must be between 1 and 20.")
+    favorite_indexes = {int(index) for index in corrected_favorite if str(index).isdigit()}
+    corrected_names = []
+    favorite_names = []
+    for index, raw_title in enumerate(corrected_title):
+        title = raw_title.strip()
+        if not title:
+            continue
+        corrected_names.append(title)
+        if index in favorite_indexes:
+            favorite_names.append(title)
+    if corrected_names:
+        typed_favorites = [part.strip() for part in re.split(r"[,;\n]", favorites) if part.strip()]
+        corrected_keys = {re.sub(r"[^a-z0-9]+", "", title.lower()) for title in corrected_names}
+        kept_favorites = [
+            part for part in typed_favorites
+            if re.sub(r"[^a-z0-9]+", "", part.lower()) not in corrected_keys
+        ]
+        favorites = ", ".join(favorite_names + kept_favorites)
     image_data_url = ""
     if photo and photo.filename:
         raw = await photo.read()
@@ -83,7 +103,7 @@ async def analyze(
                 context=UserContext(
                     favorites=favorites.strip(),
                     games_to_assess=games_to_assess.strip(),
-                    corrected_titles="\n".join(title.strip() for title in corrected_title if title.strip()),
+                    corrected_titles="\n".join(corrected_names),
                     typical_player_count=player_count,
                     shelf_notes=shelf_notes.strip(),
                     expansions_in_use=expansions.strip(),
