@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from backend.agents.config import ask_json
 from backend.agents.purchase import advise_purchases
@@ -154,8 +155,16 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> WorkerRep
     return WorkerReport(worker="Game Recommender", **result)
 
 
-async def assess_player_count(shelf: ShelfReport, context: UserContext) -> WorkerReport:
-    titles = ", ".join(game.title for game in shelf.games) or context.games_to_assess
+async def assess_player_count(
+    shelf: ShelfReport, context: UserContext, *, purchase_game: str = ""
+) -> WorkerReport:
+    titles = purchase_game or ", ".join(game.title for game in shelf.games) or context.games_to_assess
+    task = (
+        f"The user typed one game they may buy: {purchase_game}. Assess only that game. "
+        "Do not call it a detected collection, shelf result, or missing game."
+        if purchase_game else
+        "Assess the named games and explain how each fits the usual group."
+    )
     result = await ask_json(
         system=(
             "You are the player-count worker. Evaluate whether games are practical for "
@@ -166,12 +175,13 @@ async def assess_player_count(shelf: ShelfReport, context: UserContext) -> Worke
             "player reports as community evidence, never as official rules. Also assess "
             "setup time, tedious bookkeeping, rules overhead, and whether digital play "
             "would reduce friction. Do not claim a digital implementation exists unless "
-            "you can name it."
+            "you can name it. Use plain English and never mention a detected collection "
+            "when the user typed the game."
         ),
         prompt=(
             f"Games to assess: {titles or 'unknown'}. "
             f"The user usually plays with {context.typical_player_count} player(s). "
-            "Recommend up to five games from the detected collection and explain fit. "
+            f"{task} "
             "For each, report publisher_range, official_recommendation, "
             "optimal_player_count, setup_burden, "
             "play_mode ('physical', 'digital', or 'both'), and named digital_options. "
@@ -182,6 +192,13 @@ async def assess_player_count(shelf: ShelfReport, context: UserContext) -> Worke
         schema=PLAYER_SCHEMA,
     )
     sources = await verify_sources(result.pop("sources"))
+    if purchase_game:
+        sentences = re.split(r"(?<=[.!?])\s+", result.get("summary", ""))
+        kept = [
+            sentence for sentence in sentences
+            if "detected collection" not in sentence.lower() and "detected game" not in sentence.lower()
+        ]
+        result["summary"] = " ".join(kept).strip() or f"Here is how {purchase_game} fits different player counts."
     return WorkerReport(worker="Player Count Advisor", metadata={"sources": sources}, **result)
 
 
@@ -195,7 +212,7 @@ async def run_workers(shelf: ShelfReport, context: UserContext) -> list[WorkerRe
             )]
         player_context = context.model_copy(update={"games_to_assess": query})
         player_report, purchase_report = await asyncio.gather(
-            assess_player_count(ShelfReport(), player_context),
+            assess_player_count(ShelfReport(), player_context, purchase_game=query),
             advise_purchases(titles=[query], owned_titles=[], context=context),
         )
         return [player_report, purchase_report]

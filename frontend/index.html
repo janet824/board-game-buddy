@@ -57,11 +57,9 @@
     .worker { border:1px solid var(--line); border-left:7px solid var(--coral); border-radius:14px; padding:14px 16px; margin-top:18px; background:#fffaf0; }
     .purchase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:12px; }
     .purchase-card { border:1px solid #d8e1d6; border-radius:14px; padding:14px; background:#f8fbf5; }
-    .purchase-card.chosen { outline:3px solid var(--coral); }
-    .selection-status { margin:10px 0 0; padding:8px 10px; border-radius:9px; background:#e8f1e5; color:#367245; font-weight:800; }
+    .purchase-card a { display:inline-block; margin:8px 8px 0 0; padding:8px 12px; border-radius:10px; background:var(--felt); color:white; font-weight:800; text-decoration:none; }
     .purchase-card h4 { margin:0 0 8px; }
     .purchase-meta { color:var(--muted); font-size:.92rem; }
-    .choose-purchase { width:auto; min-height:38px; margin-top:10px; padding:8px 12px; background:var(--ink); }
     .agent-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:24px 0 18px; }
     .agent-strip::before { content:"Your agent team"; grid-column:1 / -1; color:var(--muted); font-size:.78rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
     .agent { display:flex; align-items:center; gap:9px; background:#fffdf8; border:1px solid var(--line); border-radius:15px; padding:11px 13px; box-shadow:0 3px 0 #c9a97666; }
@@ -255,14 +253,16 @@ form.addEventListener('submit', async (event) => {
   document.querySelector('[data-agent="shelf"]')?.classList.add('thinking');
   result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and trusted places to buy the game you typed…' : 'Reading the shelf and comparing your preferences…'}</p>`;
   try {
+    const purchaseTitle = document.querySelector('#purchase-game').value.trim();
     const data = await requestJson('/api/analyze', { method:'POST', body:new FormData(form) });
     if (purchaseOnly) {
       const reports = data.worker_reports || [];
       result.innerHTML = `
         <div class="report-ready">✓ Your purchase options are ready</div>
-        <h2>Where to buy ${escapeHtml(document.querySelector('#purchase-game').value.trim())}</h2>
+        <h2>Where to buy ${escapeHtml(purchaseTitle)}</h2>
         <p>${escapeHtml(data.answer)}</p>
         ${reports.map(renderWorker).join('')}`;
+      clearEntryForm(form);
       revealResult(result);
       return;
     }
@@ -292,6 +292,7 @@ form.addEventListener('submit', async (event) => {
       <div>${collectionMessage}</div>
       ${reports.map(renderWorker).join('')}
       <p><small>Some game names may be hard for us to read. Please check them before we use your shelf for recommendations.</small></p>`;
+    clearEntryForm(form);
     revealResult(result);
   } catch (error) {
     document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
@@ -322,6 +323,7 @@ rulesForm.addEventListener('submit', async (event) => {
       <ul>${(data.official_basis || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}${(data.uncertainties || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
       <h3>Sources</h3>
       <ul>${(data.sources || []).map(source => `<li><strong>${escapeHtml(source.source_type)}</strong>: ${escapeHtml(source.title)} — ${escapeHtml(source.version)}${source.page ? `, page ${escapeHtml(source.page)}` : ''}${source.url ? ` — <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener">open source</a>` : ` — ${escapeHtml(source.url_status)}`}</li>`).join('')}</ul>`;
+    clearEntryForm(rulesForm);
     revealResult(rulesResult);
   } catch (error) {
     rulesResult.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
@@ -332,6 +334,14 @@ rulesForm.addEventListener('submit', async (event) => {
 });
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+}
+function clearEntryForm(target) {
+  target.reset();
+  if (target === form) {
+    photoPreview.removeAttribute('src');
+    photoPreview.classList.remove('visible');
+    purchaseSearch.value = 'false';
+  }
 }
 function revealResult(element) {
   element.hidden = false;
@@ -402,7 +412,15 @@ function renderWorker(report) {
     }
     return `<div class="worker"><h3>${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p>${(report.recommendations||[]).map(x => `<p><strong>${escapeHtml(x.title)}</strong> — ${escapeHtml(x.reason)}</p>`).join('')}</div>`;
   }
-  return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p>${purchaseFacts(x.store_name, x.price, x.availability)}${x.primary_url ? `<a href="${escapeHtml(x.primary_url)}" target="_blank" rel="noopener">Primary option</a>` : ''}${x.secondary_url ? ` · <a href="${escapeHtml(x.secondary_url)}" target="_blank" rel="noopener">Value option</a>` : ''}${x.big_box_url ? `<hr><strong>Big-box option${knownDetail(x.big_box_store) ? `: ${escapeHtml(knownDetail(x.big_box_store))}` : ''}</strong>${purchaseFacts('', x.big_box_price, x.big_box_availability)}<a href="${escapeHtml(x.big_box_url)}" target="_blank" rel="noopener">Open big-box option</a>` : ''}<br><button type="button" class="choose-purchase" onclick="choosePurchase(this)">Choose this option</button>${knownDetail(x.local_search_note) ? `<br><small>${escapeHtml(knownDetail(x.local_search_note))}</small>` : ''}</article>`).join('')}</div></div>`;
+  return `<div class="worker"><h3>🛒 ${escapeHtml(report.worker)}</h3><p>${escapeHtml(report.summary)}</p><div class="purchase-grid">${(report.recommendations||[]).map((x, index) => `<article class="purchase-card" data-purchase="${index}"><h4>${escapeHtml(x.title)}</h4><p>${escapeHtml(x.reason)}</p>${purchaseFacts(x.store_name, x.price, x.availability)}<p>${retailerLinks(x)}</p>${knownDetail(x.local_search_note) ? `<br><small>${escapeHtml(knownDetail(x.local_search_note))}</small>` : ''}</article>`).join('')}</div></div>`;
+}
+function retailerLinks(item) {
+  const links = item.retailer_links?.length ? item.retailer_links : [
+    item.primary_url && {store:'Amazon', url:item.primary_url},
+    item.secondary_url && {store:'eBay', url:item.secondary_url},
+    item.big_box_url && {store:item.big_box_store || 'Target', url:item.big_box_url},
+  ].filter(Boolean);
+  return links.map(link => `<a href="${escapeHtml(link.url)}" target="_blank" rel="noopener">Search ${escapeHtml(link.store)}</a>`).join('');
 }
 function knownDetail(value) {
   const text = String(value || '').trim();
@@ -411,25 +429,6 @@ function knownDetail(value) {
 function purchaseFacts(store, price, availability) {
   const facts = [knownDetail(store), knownDetail(price), knownDetail(availability)].filter(Boolean);
   return facts.length ? `<p class="purchase-meta">${facts.map(item => `<span>${escapeHtml(item)}</span>`).join(' · ')}</p>` : '';
-}
-function choosePurchase(button) {
-  document.querySelectorAll('.purchase-card').forEach(card => {
-    card.classList.remove('chosen');
-    card.querySelector('.selection-status')?.remove();
-    const previousButton = card.querySelector('.choose-purchase');
-    previousButton?.setAttribute('aria-pressed', 'false');
-    if (previousButton) previousButton.textContent = 'Choose this option';
-  });
-  const card = button.closest('.purchase-card');
-  card.classList.add('chosen');
-  button.setAttribute('aria-pressed', 'true');
-  button.textContent = '✓ Selected';
-  const status = document.createElement('p');
-  status.className = 'selection-status';
-  status.setAttribute('role', 'status');
-  status.textContent = 'Option selected. Open one of the links above to continue.';
-  card.appendChild(status);
-  card.scrollIntoView({behavior:'smooth', block:'center'});
 }
 function markAgent(name) { document.querySelector(`[data-agent="${name}"]`)?.classList.add('done'); }
 function pause(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }

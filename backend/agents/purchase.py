@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 
@@ -9,6 +9,9 @@ from backend.models import UserContext, WorkerReport
 
 PURCHASE_HOSTS = (
     "amazon.com",
+    "ebay.com",
+    "barnesandnoble.com",
+    "bestbuy.com",
     "boardgamegeek.com",
     "boardlandia.com",
     "gamenerdz.com",
@@ -70,8 +73,8 @@ async def advise_purchases(
             "status, or local availability unless a source explicitly provides it. Prefer "
             "publisher or campaign links for Kickstarter/exclusive games. For ordinary "
             "retail games, provide a primary retailer listing and a secondary value-search "
-            "link. Use only HTTPS links on recognized retailers, BoardGameGeek, Kickstarter, "
-            "or Gamefound. If you cannot provide a trustworthy direct link, leave it blank."
+            "link. Use only HTTPS links on Amazon, eBay, Walmart, Target, Barnes & Noble, "
+            "Best Buy, BoardGameGeek, Kickstarter, or Gamefound. If you cannot provide a trustworthy direct link, leave it blank."
         ),
         prompt=(
             f"Game to buy: {context.purchase_query or ', '.join(titles) or 'none'}\n"
@@ -79,8 +82,9 @@ async def advise_purchases(
             f"Condition preference: {context.purchase_preference}\n"
             f"Local search consent: {context.local_store_search_consent}\n"
             f"ZIP code: {context.zip_code or 'not provided'}\n"
-            "Search only for the game named above. Do not add games from an earlier "
-            "recommendation. Return no owned games. If the request is a game family "
+            "Search only for the game named above. A single title such as Carnegie is "
+            "specific enough to search immediately. Do not add games from an earlier "
+            "recommendation. Return no owned games. If the request is a broad game family "
             "with multiple editions or expansions (for example Azul or Catan), do not "
             "search yet unless the player selected 'any version'. If 'any version' was "
             "selected, list every relevant verified version or expansion found, clearly "
@@ -97,12 +101,40 @@ async def advise_purchases(
         schema=PURCHASE_SCHEMA,
     )
     recommendations = await verify_links(result["recommendations"])
+    game = context.purchase_query.strip() or (titles[0] if titles else "")
+    recommendations = [add_store_searches(item, game) for item in recommendations] or [add_store_searches({}, game)]
     return WorkerReport(
         worker="Purchase Advisor",
         summary=result["summary"],
         recommendations=recommendations,
         caveats=result["caveats"],
     )
+
+
+def add_store_searches(item: dict, game: str) -> dict:
+    """Add trusted major-retailer searches when a direct product page is unavailable."""
+    if not game:
+        return item
+    query = quote_plus(f"{game} board game")
+    retailers = (
+        ("Amazon", f"https://www.amazon.com/s?k={query}"),
+        ("eBay", f"https://www.ebay.com/sch/i.html?_nkw={query}"),
+        ("Walmart", f"https://www.walmart.com/search?q={query}"),
+        ("Target", f"https://www.target.com/s?searchTerm={query}"),
+        ("Barnes & Noble", f"https://www.barnesandnoble.com/s/{query}"),
+        ("Best Buy", f"https://www.bestbuy.com/site/searchpage.jsp?st={query}"),
+    )
+    item.setdefault("title", game)
+    item.setdefault("reason", "Compare trusted major retailers, then confirm the edition before buying.")
+    item.setdefault("fit", "purchase search")
+    item["primary_url"] = item.get("primary_url") or retailers[0][1]
+    item["secondary_url"] = item.get("secondary_url") or retailers[1][1]
+    item["big_box_url"] = item.get("big_box_url") or retailers[3][1]
+    item["store_name"] = item.get("store_name") or "Major retailers"
+    item["big_box_store"] = item.get("big_box_store") or "Target"
+    item["retailer_links"] = [{"store": name, "url": url} for name, url in retailers]
+    item["local_search_note"] = "Each button opens a major retailer's search. Check the exact edition, condition, price, and stock before you buy."
+    return item
 
 
 async def verify_links(items: list[dict]) -> list[dict]:
