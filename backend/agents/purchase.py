@@ -112,7 +112,11 @@ async def verify_links(items: list[dict]) -> list[dict]:
                 url = item.get(key, "").strip()
                 if not url:
                     continue
-                host = (urlparse(url).hostname or "").lower()
+                try:
+                    host = (urlparse(url).hostname or "").lower()
+                except ValueError:
+                    item[key] = ""
+                    continue
                 trusted = any(host == allowed or host.endswith(f".{allowed}") for allowed in PURCHASE_HOSTS)
                 if not trusted or not url.startswith("https://"):
                     item[key] = ""
@@ -123,6 +127,6 @@ async def verify_links(items: list[dict]) -> list[dict]:
                         response = await http.get(url)
                     if response.status_code >= 400:
                         item[key] = ""
-                except httpx.HTTPError:
+                except (httpx.HTTPError, ValueError):
                     item[key] = ""
     return items

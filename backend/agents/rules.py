@@ -100,7 +100,12 @@ async def verify_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
                 source["url"] = ""
                 source["url_status"] = "invalid URL"
                 continue
-            host = (urlparse(url).hostname or "").lower()
+            try:
+                host = (urlparse(url).hostname or "").lower()
+            except ValueError:
+                source["url"] = ""
+                source["url_status"] = "invalid URL"
+                continue
             if not any(host == allowed or host.endswith(f".{allowed}") for allowed in TRUSTED_HOSTS):
                 source["url"] = ""
                 source["url_status"] = "untrusted host"
@@ -118,7 +123,7 @@ async def verify_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
                 )
                 if response.status_code >= 400:
                     source["url"] = ""
-            except httpx.HTTPError:
+            except (httpx.HTTPError, ValueError):
                 source["url"] = ""
                 source["url_status"] = "unreachable"
     return sources
