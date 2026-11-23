@@ -14,6 +14,7 @@
     h2 { margin-top:0; color:var(--felt); }
     h3 { color:var(--felt); }
     .intro { max-width:700px; color:var(--muted); font-size:1.15rem; }
+    .demo-notice { max-width:760px; margin:16px 0 0; padding:10px 13px; border:1px solid #d8b96c; border-radius:12px; background:#fff3c9; color:#6a5122; font-weight:700; }
     .eyebrow { display:inline-flex; gap:8px; align-items:center; padding:7px 12px; border-radius:999px; background:var(--felt); color:#fff8e9; font-size:.8rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; box-shadow:0 4px 0 #163a37; }
     .hero { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; }
     .hero-pieces { font-size:3.4rem; letter-spacing:.08em; transform:rotate(5deg); filter:drop-shadow(0 5px 0 #b99158); }
@@ -87,6 +88,7 @@
     <div class="hero-pieces" aria-hidden="true">🎲 🟩 🪙</div>
   </div>
   <p class="intro">Your AI buddy for understanding tricky rules, exploring your collection, and finding games you will actually want to play.</p>
+  <p class="demo-notice" id="demo-notice" hidden>🧪 Demo Mode: sample results are shown in this GitHub Pages preview. AI requests are disabled.</p>
   <nav class="workflow" aria-label="Jump to a Board Game Buddy task">
     <a href="#shelf-card">📸 Explore my shelf <small>Find games that fit you</small></a>
     <a href="#rules-card">📖 Solve a rules question <small>Get an evidence-backed ruling</small></a>
@@ -166,6 +168,8 @@ const rulesButton = document.querySelector('#rules-submit');
 const soundToggle = document.querySelector('#sound-toggle');
 const photoInput = document.querySelector('#photo');
 const photoPreview = document.querySelector('#photo-preview');
+const demoMode = location.hostname.endsWith('.github.io');
+if (demoMode) document.querySelector('#demo-notice').hidden = false;
 let soundsEnabled = false;
 let audioContext;
 photoInput.addEventListener('change', () => {
@@ -249,6 +253,7 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 }
 async function requestJson(url, options) {
+  if (demoMode) return url.includes('/rules') ? demoRulesResponse() : demoAnalyzeResponse();
   const response = await fetch(url, options);
   const body = await response.text();
   let data;
@@ -261,6 +266,41 @@ async function requestJson(url, options) {
   }
   if (!response.ok) throw new Error(data.detail || `The request failed (${response.status}).`);
   return data;
+}
+function demoAnalyzeResponse() {
+  return {
+    answer: "This browser-only preview found a sample collection and prepared example recommendations. In the full app, the agents would use your shelf photo, favorites, player count, and trusted purchase sources.",
+    shelf_report: {
+      games: [
+        {title:"Wyrmspan", shelf_group:"favorite"},
+        {title:"Finspan", shelf_group:"unplayed"},
+        {title:"Wingspan", shelf_group:"favorite"}
+      ]
+    },
+    worker_reports: [
+      {worker:"Game Recommender", summary:"Sample collaborative-filtering candidates based on the example favorites.", recommendations:[
+        {title:"Apiary", reason:"A strategic engine-building game with a satisfying progression system."},
+        {title:"Earth", reason:"A tableau-building game with an engaging nature theme and flexible turns."}
+      ]},
+      {worker:"Player Count Advisor", summary:"Sample player-count guidance for the example collection.", recommendations:[
+        {title:"Wyrmspan", publisher_range:"1–5", official_recommendation:"See the official rulebook", optimal_player_count:"2–3", reason:"Lower counts keep the turns focused.", setup_burden:"moderate", play_mode:"physical"}
+      ]},
+      {worker:"Purchase Advisor", summary:"Sample purchase comparison. Live prices and stock require the full deployment.", recommendations:[
+        {title:"Sample purchase option", reason:"Demo card only.", store_name:"Example retailer", price:"Not live", availability:"Demo data"}
+      ]}
+    ],
+    agents_used:["Board Game Buddy","Shelf Interpreter","Game Recommender","Player Count Advisor"]
+  };
+}
+function demoRulesResponse() {
+  return {
+    ruling:"Demo ruling: check the active expansion and variant before applying the base-game rule.",
+    answer:"This is a sample answer showing how the Rules Helper presents a direct ruling, steps, evidence, and uncertainty.",
+    steps:["Identify the base-game rule.","Check whether an expansion changes it.","Confirm the exact rulebook edition and page before play continues."],
+    official_basis:["Demo evidence only; no official source was consulted in this browser-only preview."],
+    uncertainties:["Upload a real rulebook page in the full app for an evidence-backed answer."],
+    sources:[]
+  };
 }
 function renderWorker(report) {
   if (report.worker !== 'Purchase Advisor') {
