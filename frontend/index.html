@@ -276,12 +276,12 @@ form.addEventListener('submit', async (event) => {
   result.hidden = false;
   document.querySelectorAll('.agent').forEach(agent => agent.classList.remove('thinking'));
   document.querySelector('[data-agent="shelf"]')?.classList.add('thinking');
-  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and comparing online, local, and big-box prices…' : 'Reading the shelf and comparing your preferences…'}</p><p>This can take a minute. Keep this page open and the result will appear when it is ready.</p>`;
+  result.innerHTML = `<p>${purchaseOnly ? 'Checking the player count and comparing online, local, and big-box prices…' : 'Reading the shelf and comparing your preferences…'}</p><p>${waitingNote}</p>`;
   try {
     const purchaseTitle = document.querySelector('#purchase-game').value.trim();
     const data = await requestJob('/api/analyze', { method:'POST', body:new FormData(form) }, seconds => {
       const note = result.querySelector('p:last-child');
-      if (note) note.textContent = `Still working (${seconds}s). Keep this page open and the result will appear when it is ready.`;
+      if (note) note.textContent = `Still working (${seconds}s). ${waitingNote}`;
     });
     if (purchaseOnly) {
       const reports = data.worker_reports || [];
@@ -324,11 +324,11 @@ rulesForm.addEventListener('submit', async (event) => {
   rulesButton.disabled = true;
   rulesButton.textContent = 'Checking the rules…';
   rulesResult.hidden = false;
-  rulesResult.innerHTML = '<p>Checking the rulebook and other rules sources for this game…</p><p>This can take a minute. Keep this page open and the answer will appear when it is ready.</p>';
+  rulesResult.innerHTML = `<p>Checking the rulebook and other rules sources for this game…</p><p>${waitingNote}</p>`;
   try {
     const data = await requestJob('/api/rules', { method:'POST', body:new FormData(rulesForm) }, seconds => {
       const note = rulesResult.querySelector('p:last-child');
-      if (note) note.textContent = `Still working (${seconds}s). Keep this page open and the answer will appear when it is ready.`;
+      if (note) note.textContent = `Still working (${seconds}s). ${waitingNote}`;
     });
     rulesResult.innerHTML = `
       <div class="report-ready">✓ Your rules answer is ready</div>
@@ -369,11 +369,11 @@ result.addEventListener('submit', async (event) => {
   const submit = correction.querySelector('button');
   submit.disabled = true;
   submit.textContent = 'Updating the names…';
-  result.insertAdjacentHTML('afterbegin', '<p id="correction-wait">Updating your game names. Keep this page open.</p>');
+  result.insertAdjacentHTML('afterbegin', `<p id="correction-wait">Updating your game names. ${waitingNote}</p>`);
   try {
     const data = await requestJob('/api/analyze', {method:'POST', body:new FormData(correction)}, seconds => {
       const note = document.querySelector('#correction-wait');
-      if (note) note.textContent = `Still updating (${seconds}s). Keep this page open.`;
+      if (note) note.textContent = `Still updating (${seconds}s). ${waitingNote}`;
     });
     showCollectionReport(data, {
       favorites: correction.favorites.value,
@@ -505,28 +505,100 @@ function revealResult(element) {
   element.scrollIntoView({behavior:'smooth', block:'start'});
   element.focus({preventScroll:true});
 }
+const PENDING_JOB = 'bgb-pending-job';
+const waitingNote = 'The phone can go dark. This page will show the result when you come back.';
+let screenLock = null;
+let screenLockWanted = false;
+function keepScreenOn() {
+  screenLockWanted = true;
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  navigator.wakeLock.request('screen').then(lock => {
+    screenLock = lock;
+    lock.addEventListener('release', () => {
+      if (screenLock === lock) screenLock = null;
+      if (screenLockWanted && document.visibilityState === 'visible') keepScreenOn();
+    });
+  }).catch(() => {});
+}
+async function allowScreenOff() {
+  screenLockWanted = false;
+  try { await screenLock?.release(); } catch {}
+  screenLock = null;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && screenLockWanted) keepScreenOn();
+});
+function waitWhileWorking(ms) {
+  return new Promise(resolve => {
+    let timer = 0;
+    const done = () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onChange);
+      resolve();
+    };
+    const onChange = () => {
+      if (document.visibilityState === 'visible') done();
+      else clearTimeout(timer);
+    };
+    document.addEventListener('visibilitychange', onChange);
+    if (document.visibilityState === 'visible') timer = setTimeout(done, ms);
+  });
+}
+async function pollJob(jobId, onWait) {
+  let visibleMs = 0;
+  let mark = document.visibilityState === 'visible' ? Date.now() : 0;
+  const freeze = () => {
+    if (!mark) return;
+    visibleMs += Date.now() - mark;
+    mark = 0;
+  };
+  const onChange = () => {
+    if (document.visibilityState === 'hidden') freeze();
+    else if (!mark) mark = Date.now();
+  };
+  document.addEventListener('visibilitychange', onChange);
+  try {
+    while (visibleMs < 8 * 60 * 1000) {
+      onWait?.(Math.round((visibleMs + (mark ? Date.now() - mark : 0)) / 1000));
+      await waitWhileWorking(3000);
+      freeze();
+      if (document.visibilityState === 'visible') mark = Date.now();
+      try {
+        const job = await requestJson(`/api/jobs/${jobId}`);
+        if (job.status === 'done') return job.result;
+        if (job.status === 'error') throw new Error(job.detail || 'The analysis failed.');
+      } catch (error) {
+        const message = String(error.message || '');
+        if (/analysis failed|no longer available|Player count|rules question|uploaded photo|request failed \(4/.test(message)) throw error;
+      }
+    }
+  } finally {
+    document.removeEventListener('visibilitychange', onChange);
+  }
+  throw new Error('This is taking longer than expected. Please try again.');
+}
 async function requestJob(url, options, onWait) {
   if (demoMode) {
     if (url.includes('/rules')) return demoRulesResponse();
     if (options?.body instanceof FormData && options.body.get('purchase_search') === 'true') return demoPurchaseResponse(options.body.get('purchase_game'));
     return demoAnalyzeResponse(options?.body);
   }
-  const started = await requestJson(url, options);
-  if (!started.job_id) return started;
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 8 * 60 * 1000) {
-    onWait?.(Math.round((Date.now() - startedAt) / 1000));
-    await pause(3000);
-    try {
-      const job = await requestJson(`/api/jobs/${started.job_id}`);
-      if (job.status === 'done') return job.result;
-      if (job.status === 'error') throw new Error(job.detail || 'The analysis failed.');
-    } catch (error) {
-      const message = String(error.message || '');
-      if (/analysis failed|no longer available|Player count|rules question|uploaded photo|request failed \(4/.test(message)) throw error;
-    }
+  keepScreenOn();
+  try {
+    const started = await requestJson(url, options);
+    if (!started.job_id) return started;
+    const body = options?.body instanceof FormData ? options.body : null;
+    sessionStorage.setItem(PENDING_JOB, JSON.stringify({
+      id: started.job_id,
+      url,
+      purchase: body?.get('purchase_search') === 'true',
+      title: String(body?.get('purchase_game') || body?.get('game_name') || ''),
+    }));
+    return await pollJob(started.job_id, onWait);
+  } finally {
+    sessionStorage.removeItem(PENDING_JOB);
+    await allowScreenOff();
   }
-  throw new Error('This is taking longer than expected. Please try again.');
 }
 async function requestJson(url, options) {
   if (demoMode) return url.includes('/rules') ? demoRulesResponse() : demoAnalyzeResponse(options?.body);
@@ -657,6 +729,78 @@ function tone(frequency, start, duration, type) {
   oscillator.connect(gain).connect(audioContext.destination);
   oscillator.start(start); oscillator.stop(start + duration + .02);
 }
+async function resumePendingJob() {
+  if (demoMode) return;
+  const raw = sessionStorage.getItem(PENDING_JOB);
+  if (!raw) return;
+  let pending;
+  try { pending = JSON.parse(raw); } catch { sessionStorage.removeItem(PENDING_JOB); return; }
+  if (!pending.id) return;
+  const rules = String(pending.url || '').includes('/rules');
+  keepScreenOn();
+  const box = rules ? rulesResult : result;
+  if (rules) {
+    showView('rules-view');
+    rulesButton.disabled = true;
+  } else if (pending.purchase) {
+    showView('collection-view');
+    document.querySelector('#collection-view').classList.add('purchase-mode');
+    clearButton.textContent = 'Clear this page';
+    button.disabled = true;
+    purchaseSubmit.disabled = true;
+  } else {
+    showView('collection-view');
+    button.disabled = true;
+    purchaseSubmit.disabled = true;
+  }
+  box.hidden = false;
+  box.innerHTML = `<p>Still working…</p><p>${waitingNote}</p>`;
+  try {
+    const data = await pollJob(pending.id, seconds => {
+      const note = box.querySelector('p:last-child');
+      if (note) note.textContent = `Still working (${seconds}s). ${waitingNote}`;
+    });
+    if (rules) {
+      rulesResult.innerHTML = `
+        <div class="report-ready">✓ Your rules answer is ready</div>
+        <h3>Ruling</h3>
+        <p><strong>${escapeHtml(data.ruling)}</strong></p>
+        <p>${escapeHtml(data.answer)}</p>
+        <h3>How to apply it</h3>
+        <ol>${(data.steps || []).map(step => `<li>${escapeHtml(step)}</li>`).join('')}</ol>
+        <h3>Evidence and uncertainty</h3>
+        <ul>${(data.official_basis || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}${(data.uncertainties || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+        <h3>Sources</h3>
+        <ul>${(data.sources || []).map(source => `<li><strong>${escapeHtml(source.source_type)}</strong>: ${escapeHtml(source.title)} — ${escapeHtml(source.version)}${source.page ? `, page ${escapeHtml(source.page)}` : ''}${source.url ? ` — <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener">open source</a>` : ` — ${escapeHtml(source.url_status)}`}</li>`).join('')}</ul>`;
+      revealResult(rulesResult);
+    } else if (pending.purchase) {
+      const reports = data.worker_reports || [];
+      result.innerHTML = `
+        <div class="report-ready">✓ Your purchase options are ready</div>
+        <h2>Where to buy ${escapeHtml(pending.title || '')}</h2>
+        <p>${escapeHtml(data.answer)}</p>
+        ${reports.map(renderWorker).join('')}`;
+      savedResults.purchase = result.innerHTML;
+      revealResult(result);
+    } else {
+      showCollectionReport(data, {
+        favorites: document.querySelector('#favorites').value,
+        playerCount: document.querySelector('#player-count').value,
+        shelfNotes: document.querySelector('#shelf-notes').value,
+      });
+      revealResult(result);
+    }
+  } catch (error) {
+    box.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+  } finally {
+    sessionStorage.removeItem(PENDING_JOB);
+    button.disabled = false;
+    purchaseSubmit.disabled = false;
+    rulesButton.disabled = false;
+    await allowScreenOff();
+  }
+}
+resumePendingJob();
 </script>
 </body>
 </html>

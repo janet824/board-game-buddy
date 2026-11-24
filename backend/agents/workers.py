@@ -281,6 +281,7 @@ async def recommend_games(shelf: ShelfReport, context: UserContext) -> list[Work
         ),
         schema_name="recommendation_pair",
         schema=PAIR_SCHEMA,
+        usage_label="recommendations",
     )
     owned = {_key(game.title) for game in shelf.games}
     owned.update(_key(part) for part in re.split(r"[,;\n]", context.favorites) if part.strip())
@@ -344,6 +345,7 @@ async def assess_player_count(
         ),
         schema_name="player_count_report",
         schema=PLAYER_SCHEMA,
+        usage_label="player_count",
     )
     sources = await verify_sources(result.pop("sources"))
     if purchase_game:

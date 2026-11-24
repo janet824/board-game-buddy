@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from backend.agents.config import MODEL_NAME, ask_json, client
+from backend.agents.config import MODEL_NAME, ask_json, client, note_usage
 from backend.models import RulesResponse
 
 SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "buff.ly", "adf.ly", "tiny.cc")
@@ -79,6 +79,7 @@ async def answer_rules_question(
         schema_name="rules_response",
         schema=RULES_SCHEMA,
         image_data_url=image_data_url,
+        usage_label="rules_answer",
     )
     response = RulesResponse.model_validate(result)
     if not research.startswith("Rulebook lookup failed"):
@@ -111,6 +112,7 @@ async def research_rulebook(game_name: str, question: str, expansions: str) -> s
             tools=[{"type": "web_search", "search_context_size": "medium"}],
             input=prompt,
         )
+        note_usage(response, "rules_research")
     except Exception as error:
         return f"Rulebook lookup failed ({error.__class__.__name__}). Do not invent page numbers."
     return response.output_text or "Rulebook lookup failed. Do not invent page numbers."

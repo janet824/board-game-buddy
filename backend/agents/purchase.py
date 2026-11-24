@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-from backend.agents.config import MODEL_NAME, ask_json, client
+from backend.agents.config import MODEL_NAME, ask_json, client, note_usage
 from backend.models import UserContext, WorkerReport
 
 AMBIGUOUS_FAMILIES = (
@@ -126,6 +126,7 @@ async def research_prices(game: str, context: UserContext) -> str:
             tools=[{"type": "web_search", "search_context_size": "medium"}],
             input=prompt,
         )
+        note_usage(response, "purchase_research")
     except Exception as error:
         return f"Price lookup failed ({error.__class__.__name__}). Do not invent prices or stock."
     return response.output_text or "No price research was returned. Do not invent prices or stock."

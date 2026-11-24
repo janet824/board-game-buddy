@@ -1,102 +1,71 @@
 # Board Game Buddy
 
-Board Game Buddy is a multi-agent assistant for discovering, understanding, and choosing board games. It can analyze a shelf photo, combine the detected collection with a user's favorites and player count, and produce personalized recommendations.
+Board Game Buddy helps a player understand a rules question, find games that fit the collection they already love, and compare one online price, one local shop, and one big-box price before buying.
 
-## Quick start
+Author: Janet Leung
 
-### 1. Configure OpenAI
+- Repository: https://github.com/janet824/board-game-buddy
+- Browser-only demo (sample results, no live model): https://janet824.github.io/board-game-buddy/
 
-From this directory:
+The graded app is this local server. It calls OpenAI with `gpt-6-luna` only. The GitHub Pages link is a labeled demo and does not call the model.
 
-```bash
-cp .env.example .env
-```
+## Run it
 
-Put your OpenAI key in `.env`:
-
-```text
-OPENAI_API_KEY=your_key_here
-```
-
-When grading from the course submission folder, the app also accepts the shared `.env` one folder above this repository. A project-local `.env` takes precedence when both files exist.
-
-### 2. Install and run the backend
+Use Python 3.11 or newer. From this folder:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000/ in a browser.
+On Windows, activate the virtual environment with `.venv\Scripts\activate`.
 
-## Deploy for phone testing
+Then open http://127.0.0.1:8000/
 
-This repository includes `render.yaml` for deployment on Render. Create a new Web Service from this GitHub repository, keep the generated start command, and enter `OPENAI_API_KEY` only in Render's private environment-variable field. Do not commit the key to GitHub. Render will provide the shareable HTTPS app URL after the first deploy.
+### API key
 
-The repository also publishes a browser-only demo through GitHub Pages at `https://janet824.github.io/board-game-buddy/`. The demo is labeled **Demo Mode** and uses sample results; it does not call an external AI service or represent live AI output.
+The app reads `OPENAI_API_KEY` from a `.env` file. It looks in this folder first, then in the folder above it. A local file wins when both exist. Copy `.env.example` if you need a template:
 
-### Safety before sharing
+```text
+OPENAI_API_KEY=your_key_here
+MODEL_NAME=gpt-6-luna
+```
 
-- Never commit `.env` or paste the OpenAI key into source code, screenshots, prompts, or the README. The real key is loaded only from the local `.env` file, which is ignored by Git.
-- `.env.example` contains configuration names only; its blank key is intentional.
-- Uploaded photos and questions are processed for the current request and are not saved by this app.
-- Do not put private names, addresses, ZIP codes, collection screenshots, or rulebook photos into the repository.
-- Purchase and rules links are displayed only when they use HTTPS, come from an approved domain, and pass a reachability check. A failed or untrusted link is suppressed.
-- Recommendations exclude games identified as already owned; uncertain ownership is labeled for review.
+Do not commit a real key. When the teaching staff clones this repo into a submissions folder, their shared `.env` one level above the repo is enough.
 
-The first version intentionally uses a small, visible workflow so a grader can run it quickly:
+Check that the server is up:
 
-1. Upload a shelf photo.
-2. Describe favorite games and typical player count.
-3. Review the detected titles.
-4. Ask Board Game Buddy for recommendations.
+```bash
+curl http://127.0.0.1:8000/api/health
+```
 
-The form also asks which expansions are included and whether the group uses variants or house rules. These are important for rules questions: the Rules Helper must identify the applicable official source and label house-rule interpretations separately.
+The response includes `"model": "gpt-6-luna"`.
 
-## Recommendation policy
+## What to try
 
-Recommendations must be for games the player does not already own. The recommender excludes every title identified in the uploaded shelf photo or supplied collection data before generating suggestions. If ownership is uncertain, it asks the player to confirm rather than presenting the game as a new recommendation.
+The home page has three tasks. Each one keeps what you typed until you press **Clear this page**. A phone can lock while a search is running; the result comes back when you reopen the page.
 
-Purchase guidance asks whether the player wants new, used, or either condition. It also asks for optional ZIP-code-based local-store searching consent. The Purchase Advisor provides a verified primary purchase link and secondary value link when available; crowdfunding and publisher-exclusive games link only to their official campaign or publisher page. Local store availability is labeled as needing confirmation unless a store website supplies current inventory.
+1. **Explore my shelf.** A photo is optional. Type favorite games and the usual player count, or note that a shelf area holds favorites. The app returns five games that fit those favorites and five different newer games. Owned games are left out. Each suggestion says whether it is better online, with a platform link, or better to buy and play in person.
+2. **Solve a rules question.** Type the game name and the question. A card or rulebook photo is optional. The helper looks up the official rulebook, a publisher FAQ when one exists, and an unofficial source such as BoardGameGeek.
+3. **Find where to buy.** Search one game at a time. The page gives a player-count and setup note, then one online listing, one local shop when a ZIP code and permission are provided, and one Target or Walmart listing. Local stock should be confirmed by a phone call.
 
-When a purchase request is ambiguous—such as “Azul” or “Catan”—the advisor pauses and asks whether the user means any version, the base game, or a specific expansion before searching.
+If a name such as Azul or Catan could mean a base game or an expansion, the purchase search asks which one before it looks up prices.
 
-If the user selects “any version,” the advisor shows every relevant verified version or expansion it finds and labels each as a base game, standalone edition, or expansion. It does not imply that the list is an exhaustive catalog beyond the sources searched.
+## Agents
 
-Purchase results are displayed as comparison cards so the player can choose an option. Each card includes the store, price, availability, primary/value links, and a call-first reminder when local inventory is not guaranteed.
+`backend/agents/boss.py` coordinates the shelf and purchase tasks.
 
-When relevant, the advisor also adds a third big-box comparison from a trusted retailer such as Target or Walmart.
+- Shelf Interpreter reads a shelf photo and marks favorites when the note says an area holds them.
+- Games for you and New games come from one recommendation call. Code then removes owned games and keeps an online link only when setup is heavy and the platform is real.
+- Player Count Advisor and Purchase Advisor run together when you search a game to buy. Purchase research uses web search. Prices ignore shipping, cart, and pickup text, and search-page links are dropped.
+- Rules Helper is a separate task in `backend/agents/rules.py`. It searches the rulebook first, then writes a structured answer. Links that are not HTTPS, or that use a shortener, are not shown.
 
-The Player Count Advisor separates the publisher’s supported range, official rulebook or publisher recommendations, and community-reported optimal counts. It also reports setup and rules friction and whether physical or digital play is likely to be more practical. Community evidence and digital-platform claims are labeled and linked only when a trusted source is available.
+## Safety
 
-When a legitimate digital implementation exists, the advisor recommends its verified official or established platform link. Recognized digital sources include Tabletopia, Board Game Arena, Steam, Apple’s App Store, and Google Play.
-
-## Device support
-
-The interface is responsive for desktop computers and phones. On phones it switches to a single-column layout, keeps controls touch-friendly, supports taking a shelf photo directly from the camera upload control, and respects reduced-motion preferences.
-
-The Rules Helper is a separate live-play workflow. Upload a rulebook/card photo, enter the question, identify expansions, and disclose variants or house rules. The response gives a ruling, numbered steps, evidence notes, and uncertainty notes.
-
-Rules links are restricted to HTTPS sources on recognized publisher, official game, board-game database, or established community domains. Links from unknown hosts are not displayed, even if they respond successfully.
-
-## Agent architecture
-
-`backend/agents/boss.py` is the coordinator. It delegates to focused workers in `backend/agents/workers.py`:
-
-- Shelf interpreter: identifies visible games and shelf-group context
-- Recommendation worker: matches games to favorites and collection context
-- Player-count worker: evaluates best practical player counts, setup friction, and physical versus digital play
-
-Rules and new-release workers remain extension points for the next iteration. The API keeps worker results separate so additional research workers can be added without changing the user interface.
-
-## Component identities
-
-The interface represents each worker as a board-game component:
-
-- Shelf Interpreter: hex tiles fitting together
-- Game Recommender: dice clattering
-- Player Count Advisor: transparent cubes stacking
-
-Click **Enable agent sounds** to hear the optional procedural completion sounds. The browser requires this explicit opt-in before audio can play.
+- The key stays in `.env`. It is not written into source, the README, or saved uploads.
+- Uploaded photos are used for the current request and are not stored.
+- Player count must be from 1 to 20.
+- Purchase and rules links are checked before they are shown.
+- A local store is searched only after the player enters a ZIP code and checks the permission box.
